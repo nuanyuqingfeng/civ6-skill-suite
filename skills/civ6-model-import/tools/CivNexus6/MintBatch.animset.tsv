@@ -1,0 +1,13 @@
+# 薄荷领袖动画名表（MintBatch.exe 随包配置；制表符分隔）
+model.cn6	LEAD_HTR_Mint_QYQXP.cn6
+model.fbx	LEAD_HTR_Mint_QYQXP_Model.fbx
+model.tmp	LEAD_HTR_Mint_QYQXP_src.fgx
+model.dst	LEAD_HTR_Mint_QYQXP.fgx
+model.node	MintBody
+anim	HM_IDLE
+anim	HM_FirstMeet
+anim	HM_DeclareWarHuman
+anim	HM_DeclareWarAI
+anim	HM_Kudos
+anim	HM_Warning
+anim	HM_Defeat

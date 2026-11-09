@@ -1,0 +1,146 @@
+# Troubleshooting
+
+## 1. Trimmed 构建卡在 PreparingContent
+
+现象：
+
+```text
+Status: k_EItemUpdateStatusPreparingContent
+... 持续 10 分钟以上，无 bytes processed
+```
+
+原因：
+
+- `PublishTrimmed=true` 裁剪了 Steamworks.NET 依赖的反射回调。
+- `SubmitItemUpdate` 的结果回调可能永远不触发。
+
+解决：
+
+```powershell
+dotnet publish -c Release -r win-x64
+```
+
+不要加 `-p:PublishTrimmed=true`。
+
+## 2. k_EResultFail / No Connection
+
+现象：
+
+```text
+Error occurred while uploading to the workshop! Result: k_EResultFail
+```
+
+Steam 日志：
+
+```text
+Failed to initialize build on server (No Connection)
+Timeout uploading manifest
+Failed to download manifest ... (request failed)
+```
+
+处理：
+
+1. 等待 1–2 分钟再重试。
+2. 如果持续失败，用 `clash_proxy.py` 切换节点。
+3. 先传小文件（如 TEST_MOD_EMPTY）验证连通性。
+
+## 3. UploadingContent 后失败
+
+现象：
+
+```text
+PreparingContent -> UploadingContent -> Invalid -> k_EResultFail
+```
+
+原因：
+
+- 大文件传输中途断连。
+- 服务端 manifest 请求超时。
+
+处理：
+
+- 重试。
+- 大文件上传建议给 30 分钟超时。
+- 优先用非 Trimmed 工具，因为它会显示真实 bytes 进度。
+
+## 4. 0 of 0 bytes -- success（假成功判断）
+
+现象：
+
+```text
+Preparing: 1234xxxx / 1345xxxx bytes
+Update   : 0 of 0 bytes -- success
+```
+
+不能直接认为内容已更新，必须验证：
+
+```powershell
+release\scripts\verify.ps1 -ItemId <id>
+```
+
+判断：
+
+- `hcontent_file` 变了 → 内容确实更新（可能 chunk 已存在，0 字节也正常）。
+- `hcontent_file` 没变 → 假成功，工坊仍是旧内容。
+
+同时看 Steam 日志：
+
+```text
+No content change detected
+Uploaded new content ( ManifestID ... )
+Reverting to previous content ...
+```
+
+## 5. Steam API result 9
+
+现象：
+
+```json
+{ "publishedfileid": "...", "result": 9 }
+```
+
+可能原因：
+
+- 条目是 private / unlisted，匿名 API 查不到。
+- 不能据此判定条目不存在。
+
+处理：
+
+- 用上传器以作者身份尝试。
+- 用 `release\scripts\find_item_id.ps1 -ModName <mod>` 取编号：先查账户工坊列表（`-Account` 可列全部，走个人资料页），再查项目台账 `<p1>\<工程>\<mod>\workshop-ledger.md`，最后查本地 Steam 日志；三处都没有时向用户索要，禁止新建工作区。
+
+## 6. 官方上传器对个别作品 0 字节 success
+
+可能原因：
+
+- 本地内容与服务端 manifest 一致。
+- 之前中断上传留下的 chunk 已被 Steam 缓存。
+- hijacked 版上传器封装不完整。
+
+建议：
+
+- 改用本文档所属的 `civ6-modding/release.md` 所述非 Trimmed 工具。
+- 上传后必须 verify。
+
+## 7. k_EResultAccessDenied（提交阶段被拒）
+
+现象：
+
+```text
+PreparingContent -> UploadingContent -> CommittingChanges -> k_EItemUpdateStatusInvalid
+Error occurred while uploading to the workshop! Result: k_EResultAccessDenied
+```
+
+Steam 日志：
+
+```text
+No content change detected for item <id>
+Upload finished for workshop item <id> : Access Denied
+```
+
+两类成因，先分辨再处置：
+
+1. **描述或标题超限**：`description` 上限 8000 字节（`k_cchPublishedDocumentDescriptionMax`，按 UTF-8 字节计），标题上限 128 字节（`k_cchPublishedDocumentTitleMax`）。超限时服务端在提交阶段**整次拒绝** —— 描述与 `changeNote` 都不生效，内容也不提交，2026-10-21 实测 8001 字节即返回 Access Denied。处置：把描述压回 8000 字节以内（`workshop_meta.py` 会提前判失败）。
+2. **上传节流**（同一时段反复上传同一作品）：与描述长度无关，241 字节的短描述同样被拒；静默数分钟后恢复。因此同一作品不要在同一分钟内反复上传。
+
+排查顺序：先核对本次描述与标题的字节数 → 都合规则视为节流，静默后重试 → 重试仍被拒则记录该条目状态并停止连续尝试。

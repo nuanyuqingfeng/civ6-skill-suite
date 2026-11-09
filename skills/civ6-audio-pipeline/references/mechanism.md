@@ -1,0 +1,313 @@
+# Civ6 音频机制速查（本机实证版）
+
+> 结论来源：官方本体文件 + 工坊 127 mod 全量扫描 + 多个本地 mod 先例（含 .civ6proj 与 .modinfo 双路线）+ 实战交付。写码前先读「铁律」。
+
+## 1. 官方音频体系
+
+- 位置：`Base/Platforms/Windows/audio/`（小写 audio）
+- `Banks.ini` 决定加载时机：`[Global]`(常驻) `[Menu]`(主菜单) `[InGame]`(对局) `[2D]` `[3D]` `[FMV]`
+- 每个 bank 三件套：`.bnk` + 同名 `.xml`(Wwise SoundBanksInfo) + `.txt`(人读事件表)
+- 流式媒体：数字 ID 命名 `.wem`，平铺在 bank 旁
+- 语言夹（`Chinese(PRC)/` 等）= 本地化语音 per-language bank
+- `Init.bnk` 是 Wwise 工程初始化（总线/游戏同步），**mod 不携带**
+
+## 2. 版本指纹
+
+| 指纹 | 值 | 说明 |
+|---|---|---|
+| SoundBanksInfo `SoundbankVersion` | **113** | 官方与 mod 一致（Wwise 2015.1.x） |
+| BKHD 布局版本 | 官方=20；Wwise 2015.1.9 产物=**24** | 引擎兼容两者；本地先例 mod 用 24 实测可用 |
+| 评估版许可 | 每 bank ≤ **200** 媒体项 | 大批量拆 bank |
+
+## 3. Mod 注册三件套（缺一不可）
+
+1. **Soundbanks ini**（`Platforms/Windows/Audio/xxx_Banks.ini`，无 BOM/CRLF/ASCII）：与官方 Banks.ini 同构 6 节，列 bank 文件名。
+2. **`.modinfo`**：`<InGameActions>` 内 `<UpdateAudio id="X"><File>Platforms/Windows/Audio/xxx.ini</File></UpdateAudio>`；变体可同时列 .bnk/.xml；`<Files>` 打包清单补条目。
+3. **`.civ6proj`**（ModBuddy 源工程）：`InGameActionData` CDATA 内单行 `<UpdateAudio id="X"><File>Platforms/Windows/Audio/xxx.ini</File></UpdateAudio>`（正斜杠）+ MSBuild 条目
+   `    <Content Include="Platforms\Windows\Audio\x.wem">` + `      <SubType>Content</SubType>`（反斜杠）。
+   实证先例：本地某领袖 mod 源工程 .civ6proj（CDATA 单行 UpdateAudio + Content 条目）。
+   > 背景：给**既有 mod 首次加音频**时，P1 源工程与 P2 运行目录往往都没有音频注册——两边都要写（`register_to_mod.py` 默认双写）；该做法与"防止重建丢失"无关。
+   > ⚠ 已有条目的 `.modinfo` / `.civ6proj`（以及 `Platforms/Windows/Audio/xxx_Banks.ini`）属代码文件与工程文件：命令只把待插入的行写进 `<解决方案根>/workspace/gen/reports/` 的数据清单，由人逐行写入工程。`.bnk` / `.wem` 属音频产物，由脚本直写。
+
+## 4. Wwise 工程直改（免 GUI）要点
+
+- Work unit 三类 root：Actor-Mixer 目录=`<AudioObjects>`；Events=`<Events>`；SoundBanks=`<SoundBanks>`；`SchemaVersion="70"`（Wwise 2015）。
+- Sound 对象最小结构：PropertyList(可含 IsStreamingEnabled) + ReferenceList(Conversion→Default Conversion Settings `{6D1B890C-…}`；OutputBus→Master Audio Bus `{1514A4D8-…}`) + ChildrenList(AudioFileSource: `<Language>SFX</Language>` + `<AudioFile>名.wav</AudioFile>`，wav 平铺 `Originals/SFX/`) + ActiveSourceList(Platform="Linked")。
+- 事件：`<Event>`>ChildrenList>`<Action Type="Play|Stop" Scope="One">`>ElementList>Element>ObjectRef(**WorkUnitID 必填**)。
+- bank 挂接：`<SoundBank>`>ObjectInclusionList>`<ObjectRef … Filter="7" Origin="Manual"/>`。
+- ShortID 可预填任意唯一值（模板作者手调 id 先例）；媒体 ID 由转换器按路径哈希自动分配，缺省即可。
+- 生成：`WwiseCLI.exe <proj>.wproj -GenerateSoundBanks -Platform Windows -Bank <名>`；流式 wem 由 CopyStreamedFiles 后置步自动归位。
+
+### 4.1 交互音乐（IMH）对象（媒体替换式重建要点）
+
+- 段落块必备子块：`MusicSegment`(PropertyList: EndPosition) > `MusicTrack`(IsStreamingEnabled=True) > `AudioFileSource`
+  (`<Language>SFX</Language>` + `<AudioFile>名.wav</AudioFile>` + `<ConvertedFileIDList><File ID="…"/></ConvertedFileIDList>`)
+  + `MusicTransition`(Root) + `MusicTrackSequence` > `MusicClip`(EndTrimOffset/FadeIn/FadeOut) + `CueList`(Entry Cue / Exit Cue / **ExitCustom**)。
+  **以模板段为原型克隆**最稳：从零手写极易漏子块。
+- `<AudioSourceRef>` 引用**同段 `AudioFileSource` 的 GUID**（不是 ShortID）。
+- `ConvertedFileIDList/<File ID>` 决定生成产物 `<ID>.wem` 的文件名（写死即固定该 ID；缺省则由转换器分配）。ID 从注册表避让。
+- 播放列表容器：`GridFrequencyPreset=52` + 根播放项 `LoopCount=0`/`PlayMode`（Civ 轮播=3、Leader=1）+ 叶子项
+  `PlaylistItemType=1` + `Weight`（Real64，`<Value>` 不带 Platform 属性）+ `SegmentRef`。
+- 开关容器：`ArgumentList` 引 `Game_Location`(`{33A22C91-…}`)，`EntryList` 四个时代路径
+  `Ancient_Era / Medieval_Era / Industrial_era / Modern_Era`，各指到对应时代的播放列表/段落；跨容器复用段落必须**全独立 GUID 副本**。
+
+## 5. 触发端三通道
+
+| 通道 | 写法 | 备注 |
+|---|---|---|
+| Lua(UI 上下文) | `UI.PlaySound('Play_X')` / 停止=`UI.PlaySound('Stop_X')` | **无 UI.StopSound**；api.sqlite 中 PlaySound/LoadSoundBankGroup/SetSoundSwitchValue/EnqueueNotificationSound 等全部 availability='UI' |
+| 数据库列填事件名 | `UnitCommands.Sound` `UnitOperations.Sound` `Buildings.QuoteAudio` `TechnologyQuotes/CivicQuotes/LeaderQuotes/Features.QuoteAudio` `GreatWorks.Audio` `TurnSegments.Sound` `RandomEvent_Presentation.Sound` | GreatWorks.Audio 引擎自动加 `Play_` 前缀；其余为原样事件名 |
+| artdef | Audio 集合(3D 位置音)；领袖语音=时间线 Sound 事件+动画 Duration | 教程 11 章尾部流程 |
+
+## 6. 音乐/语音专项（教程 11 章核心）
+
+- BGM 预处理：-28 LUFS(远古)/-25(后世)、48kHz 立体声 WAV、开 Stream、交互音乐时间线加 **ExitCustom** 自定义时间戳（缺它播完不再放任何音乐）。
+- 语音预处理：-21 LUFS、单声道；语言本地化=语言夹同名 bank。
+- 引擎只向 Wwise 发远古/中古/工业/原子四个时代信号，增设时代点无效；游戏同步在官方 `Init.bnk`，**绝不自制 Init**。
+
+### 6.1 BGM 内部三组结构
+
+文明音乐（BGM）按原版教程分为三组：
+
+| 分组 | 用途 | Wwise 容器 | 事件 |
+|---|---|---|---|
+| 轮播背景音乐 | 正常游玩时随机/按权重轮播 | `CivilizationMusic_<Civ>` | `Play_Music_<Civ>` |
+| 外交背景音乐 | 进入领袖外交界面时播放 | `LeaderMusic_<Civ>` | `Play_Leader_Music_<Civ>` |
+| 主题音乐 | 每次载入游戏先播放当前时代主题曲 | `ThemeMusic_<Civ>` | `Start_Music_<Civ>` |
+
+- 主题音乐建议按 4 个时代准备：远古 / 中古 / 工业 / 原子。
+- 外交背景音乐采用官方标准做法：**一个文明对应一首外交背景音乐**，由 `LeaderMusic_<Civ>` 容器与 `Play_Leader_Music_<Civ>` 事件承载。
+- **外交背景音乐响度**：目标 **-25 LUFS**（与后世 BGM 同档），靠**素材自身响度**达成，`LeaderMusic_<Civ>` 容器**不写 `Volume` 属性**。教程模板在容器上带 -8 dB 偏移，照抄会让外交界面比正常游玩明显偏轻（本地双先例实测外交曲 -25.0 LUFS 且容器无 Volume 属性）；`audio_normalize.py --category diplo` 与 `audio_check.py --category diplo` 即按此档。
+- 引擎只发送四个时代信号，文艺复兴没有独立信号，与中古同属 `MEDIEVAL_ERA`。
+- **引擎侧接线**：Wwise 侧交付后，新文明还须在 `CivilizationAudioTags` 与 `ArtDefs/Civilizations.artdef` 各写一处（有自制 BGM 写 `MusicOverride=1` + 空 `Audio`；无自制 BGM 不写该表 + `Audio/Entry/XrefName` 填借用的原版文明名），并同步 `*.Art.xml`——判定与写法见 `civ6-modding` skill 的 `reference/civ-metadata.md` §六。
+
+### 6.1a 领袖语音的停止路径（实证）
+
+- **全局停止是一条 ActorMixer 寻址的动作**：官方 `Speech.bnk` 内的 `Stop_Leader_Speech`（事件 ShortID **1239530600**）只含一条 `CAkActionStop`（`ulActionType 258 = Stop_E`），目标 `idExt` = **854467727**。游戏在结束领袖语音时播放这一个事件，引擎按该 ShortID 在 Actor-Mixer 树上找目标。
+- **语音 Sound 必须挂在该 ActorMixer 之下**，停止才会命中：正确层级为
+  `id88602518 > id854467727 > id424381547 > <Speech容器> > <Sound>`。
+  把语音 Sound 放进一个自建的扁平 SFX Folder（输出总线 Master Audio Bus）时，它不在 854467727 子树内，全局停止落空——**表现为语音一句叠一句、永远停不下来**。
+- **语音 bank 自身不含 Stop_ 事件**：权威先例 `Ragunna_Pack_Speech.bnk` 的 42 条事件全部是 Play，停止完全由上述全局动作承担。所以「照抄先例却删掉自己的 Stop_ 事件」不会修好停止——路由没动，症状照旧。
+- `id88602518` / `id854467727` 自带 `MaxSoundPerInstance=1` + `UseMaxSoundPerInstance=True`，新一句自动切掉上一句；二者是模板手调对象，**一个字节不碰**，只在其下增量挂入新的 Speech 容器（与模板自带的 `JasperKittySpeech` 同级）。
+- 该层级可用编译产物直接验收：`python scripts/audio_check.py --bank-hierarchy <bank.bnk> --voice-chain`。
+
+### 6.2 轮播机制与权重机制（区分）
+
+- **轮播机制（composition）**：决定哪些音乐对象进入各时代 `CivilizationMusic_<Civ>` 播放列表。
+  - Ancient：远古主题曲 + 全部本时代轮播音乐。
+  - Medieval：中古主题曲 + 远古主题曲 + 远古轮播音乐热度前 50%。
+  - Industrial：工业主题曲 + 中古主题曲 + 中古轮播音乐热度前 50%。
+  - Atomic：原子主题曲 + 工业主题曲 + 工业轮播音乐热度前 50%。
+  - 只跨一次时代：远古音乐不进入 Industrial/Atomic；中古音乐不进入 Atomic。
+  - 热度前 50% 不足时，从该时代剩余轮播音乐随机补足。
+- **权重机制（weights）**：决定同一时代播放列表内部曲目概率。
+  - Ancient：全部 50。
+  - Medieval：中古主题曲 50，其余曲目平分剩下 50。
+
+  > ⚠ **数值口径以 `SKILL.md` §1.5「用户定案」为准**（那里写「其余曲目（含延续曲）各 10」）；本节为教程原文口径（「平分」）。延续曲目数量可变时两者会给出不同的实际概率分布。
+  - Industrial：工业主题曲 60，中古主题曲及其带入曲目平分剩下 40。
+  - Atomic：原子主题曲 60，工业主题曲及其带入曲目平分剩下 40。
+- 两者独立：先按轮播机制确定列表成员，再按权重机制分配概率。
+
+## 7. 先例索引
+
+| 先例 | 学什么 |
+|---|---|
+| 工坊 2919148848 Raiden | SFX Lua 触发 + 音乐 Play/Stop 对 + 语音语言夹 |
+| 工坊 2599959500 Liyue | 独立 UI 音效 bank |
+| 工坊 2962169627 JadeChamber | 奇观台词走 Buildings.QuoteAudio（语言夹 bank 闭环） |
+| 本地某领袖+伟人 mod | .civ6proj 注册 + GreatWorks.Audio + 伟人音 Lua 触发 |
+| 本地某多领袖 mod 包 | .modinfo 注册 + MediaStop 统一媒体协调器（Play_→Stop_ 转换停止） |
+
+## 8. 已知坑位（注册流程）
+
+- **UpdateAudio 语义污染（已修+防呆）**：早期 `register_to_mod.py` 的 Files 条目锚点误匹配 UpdateAudio 块内自带 `<File>...ini</File>` 行，把 wem/bnk 条目塞进 `<UpdateAudio>` 内部。XML 良构校验通过、但游戏读 bank 时发现指向非 ini → bank 不加载 → 按钮静音（其他游戏声音正常）。**特征**：`<UpdateAudio>` 内出现 `<File>*.wem</File>`。**防线**：脚本已锚定 `</Files>` 插入 + 写后语义校验（UpdateAudio 只指向 .ini）+ 独立 `--verify` 命令（每次交付前跑，期望 PASS）。
+- **媒体 ID 重建漂移**：重建 work unit 后流式媒体 ID 会重新分配，旧 wem 成孤儿。注册后必须清理运行目录中不被当前 bank xml 引用的 `\d+.wem`，并同步清理 modinfo Files 条目。
+- **事件名=前缀+基名+组合码**：组合式 bank 的 `--event-base` 必须与触发端拼接前缀一致（如 `Play_`+`<基名前缀>`+`<组合码>`），漏基名会导致事件对不上、静默无声。
+- **媒体 ID 重建后 `--prune` 的两遍顺序**：① 不带 `--prune` 拷媒体（`.bnk`/`.wem` 直写、侧车入位 `workspace/gen`）→ ② AI 落位侧车 → ③ 再带 `--prune` 清孤儿。`--prune` 以**磁盘上 bank xml 的引用**为孤儿判据，侧车未落位时会误判。
+
+## 9. ShortID 规律与纯 Python 打包（历史经验）
+
+**本质：Civ6 音频全部对象都挂在 WWise 的 32 位 ShortID 全局表上。“直接导入冲突/覆盖” = ShortID 撞车。**
+
+### 9.1 Event 的 ShortID 由名字决定
+
+- Event ShortID = **FNV-1(32)** 对“小写 UTF-8 事件名”的哈希。
+- 例：某成品事件名 `XX_SS_FIRST_MEET_A -> 2650607710`（演示值），与对应成品 mod 完全一致（本机 8/8 抽样验证）。
+- 游戏触发时按事件名重新哈希，**名字全局唯一即共存**。唯一标记要放在"引擎不会改写的那一段"：
+  引擎按类别前缀拼接名字（文明音乐事件 `<动作>_Music_<CIV 内部名去 CIVILIZATION_>`、领袖派生名 `LEADER_<X>_<后缀>`），
+  所以文明/领袖的内部名要自带作者码——**前缀剥离法**：剥离引擎前缀后剩下的主体仍全局唯一（唯一码是这种"自带"的做法，
+  不是某个固定字面量）。自定名（语音事件等）没有引擎前缀，整名唯一即可（先例 `<CIV>_<领袖>_<场景>_<字母>`）。见 SKILL.md §2。
+- 反之，两个领袖若同名，后加载者的 Event ID 会覆盖先加载者。
+
+### 9.2 其余 ID 由 GUID 推导，不同内容必须全域唯一
+
+- 对象在 `.wwu` 里带显式 `ShortID` 属性时以它为准；没有该属性时由 GUID 推导：`FNV-1(32)` 对 GUID 的**小端 16 字节**（`uuid.UUID(...).bytes_le`）。
+- 所以**删掉模板里的 `ShortID` 不会换号**：GUID 没变，推导值不变。换号要么换 GUID，要么写入新的显式 `ShortID`。
+- 两份**不同内容**若落入相同数值 ID → 引擎全局表互相覆盖（同一批事件指向别人的容器，播放别人的曲目）。
+- 完全相同的内容共用同一 ID 是安全的（可去重）。
+- 模板 `FelineJasperKitty` 的 41 条 Action 就是这样被多个 mod 成套继承的（其中 34 条进音乐 bank）：复制工程连 GUID 一起复制，ShortID 随之相同。处理见 §9.2a。
+
+### 9.2a 复制模板后重签 Action 编号
+
+- 命令：`python scripts/wwise_wire.py <工程目录> --renew-action-ids [--dry-run]` —— 换掉 Events 工作单元里每条 Action 的 GUID 并删除 `ShortID` 属性，逐条打印新旧编号。
+- 重签后**必须用 WwiseCLI 重新生成**（`python scripts/wwise_wire.py <工程> --generate <bank>`）；新编号由新 GUID 推导，只存在于重新生成的产物里。
+- skill 内模板 `assets/template_slim/FelineJasperKitty` 已重签（GUID 全部换新、`ShortID` 已删除），从它复制出来的工程直接得到新编号；从旧副本或别的 mod 工程复制来的仍带旧 GUID，必须再跑一次。
+- 验收：任意两个 mod 的音乐 bank，Action 集合交集为空。
+
+### 9.3 锚点固定，禁止改号
+
+- 语音容器链：`id88602518 -> id854467727 -> id424381547`；
+- 配乐的 DummySwitches 等 `id\d+` 游戏同步对象；
+- `Init.bnk` 承载时代等游戏同步，**绝不自制/替换**。
+- `IdAllocator` 默认把三个语音锚点加入已用集合，新分配永不发放这些号。
+
+### 9.4 纯 Python bank 字节模板重建 —— ⚠️ 仅研究，编码已废弃
+
+- `wwise_shortid.py` 可从模板 Speech.bnk 提取 Sound/Action/Event/Anchor/Leaf 的 HIRC 字节模板，按 `BKHD + DIDX + DATA + HIRC` 重建 bank（SoundbankVersion=113）——**结构重建能力有效**，可用于 ShortID/布局研究。
+- **编码已废弃（实机验证记录）**：用 ffmpeg 标准 `adpcm_ms` 内嵌进 WWise 语音模板后，游戏按 **WWise 私有 ADPCM 变体**解码（ffmpeg 无法解码，报 `block_predictor` 错），导致**噪音+闪退**；且 ADPCM 压缩率约 25%，也达不到成品音乐 7.8%（Vorbis 流式）。
+- **正确做法（正式交付）**：把素材做成 **Stream（流式）→ WWise Vorbis wem**（约 8-10% 体积），建事件后由 WwiseCLI 生成 bank。语音（Speech bank）与普通音频/BGM 均如此——`audio_pack.py` 的纯 Python 产品**不得用于交付**。
+- 瘦身模板 `assets/template_slim/template_speech.bnk` 是**纯结构模板**（瘦身模板 + 静音占位生成，无成品音频），仅用于研究；
+  该目录属第三方派生内容，**不随公开仓库分发**（本地保留，缺失时跑 `scripts/ensure_template.py`）。
+
+## 10. 语音对象的 ShortID 打包命名
+
+编号不由随机分配、也不靠登记表避让，直接由名称算出。这样两个互不相识的作者各自建工程，编号天然错开。
+
+### 10.1 位段
+
+31 位 = 槽位 4 位（第 30..27 位）+ 角色 2 位（第 26..25 位）+ 主体哈希 25 位（第 24..0 位）。
+
+| 字段 | 取值 |
+|---|---|
+| 槽位 | 1 first_meet、2 declare_war_from_human、3 declare_war_from_ai、4 kudo_exit、5 warning_exit、6 defeat_from_ai、7 quote、8 misc_pep_talk；未命中记 0 |
+| 角色 | 0 Sound、1 Action、2 Container、3 Bus |
+| 主体 | FNV-1(32) 取低 25 位 |
+
+槽位取 15、角色取 3、主体取全 1 时恰为 `2147483647`，整段铺满可写区间。
+
+### 10.2 主体键
+
+- Sound / Container：`<mod 目录名>/<资产名>`
+- Action：`<mod 目录名>/<事件名>/<动作名>`（Action 一律叫 Play/Stop/Pause，必须带事件名）
+- 同类键重复时按文档顺序追加 `/2`、`/3`
+
+工程名用 mod 目录名（工坊 workspace 名），比两三个字母的缩写更耐撞。
+
+单位音效工程（`scripts/unit_bank_resign.py`）沿用同一 `compute()`：媒体源加 `afs/`、容器加 tag 前缀
+（Sound 与 AudioFileSource 常同名，不分开会撞号），Action 用 `<事件名>/<动作名>`。
+`--exclude-bank` 只把别人已占用的号加进避让集合、命中时按上条追加后缀重算，**不参与编号本身**，
+所以 `--check` 随时能复算；GUID / 随机盐不进键。Event 仍不碰（§9.1）。
+
+### 10.3 不可动的部分
+
+- **Event 编号**由 Wwise 按事件名哈希决定，写死无意义，工具不碰。
+- **三个锚点** 88602518 / 854467727 / 424381547 是 `Stop_Leader_Speech` 的寻址目标，工具跳过；主体哈希命中锚点时按 10.2 的规则追加后缀重算。
+- 显式 ShortID 必须 ≤ `2147483647`：实测写 `3000000000` 与 `4123456789` 会被 Wwise 换成随机值，写 `1123456789` 原样保留。
+
+### 10.4 用法
+
+```bash
+S=<skill目录>/scripts
+python $S/voice_shortid.py assign <工程目录> --project <mod目录名> [--dry]
+python $S/voice_shortid.py check  <工程目录> --project <mod目录名>
+python $S/voice_shortid.py verify-bank <bank.bnk> <工程目录> --project <mod目录名>
+python $S/voice_shortid.py id --project <mod目录名> --asset <资产名> --role sound
+```
+
+`assign` 只改 `.wwu` 的 `ShortID` 属性（缺属性的补上），随后照常跑 `wwise_wire.py --generate`；`check` 复算 `.wwu` 并核对，`verify-bank` 复算产物 bank 里的 Sound / Action / ActorMixer 编号，两者都以异常数作退出码。
+
+### 10.5 改号之前的硬性前提
+
+先在不改号的情况下生成一次，与在售 bank 逐字节比对；不一致的工程**不得改号**。实测两类坑：
+
+- 副本链不同：同一 mod 的另一份工程副本把三个锚点换成了别的编号，产物里语音链不在 `id854467727` 子树内，全局停止落空（表现为语音一句叠一句）。认准锚点链 `424381547 → 854467727 → 88602518` 完整的那一份。
+- 工程落后于成品：成品 bank 里的部分事件在工程里不存在（重生成会丢事件），或媒体编号整体重排（重生成会换掉全部音频源编号）。
+
+比对口径：事件编号集合一致、媒体编号与尺寸一致、对象数量一致，三者齐了才动手。
+
+### 10.6 撞号概率
+
+同一槽位同一角色才可能相撞，桶内空间 2^25。2000 个对象约 0.28%，500 个对象约 0.017%。单 mod 一个六领袖语音 bank 约 40 个对象，概率 0.001% 量级。
+
+## 11. 领袖语音改号与重编运行手册
+
+按顺序执行，每步都有验收判据；任何一步判据不过就停下，不要带着不一致往下走。
+
+### 11.1 备份
+
+改号前把在售 bank 与侧车复制到工程外的备份位置：
+
+```
+<Bank>.bnk / <Bank>.txt / <Bank>.xml
+```
+
+记录 sha1。改号后与原件的差异应当只有 Sound / Action / Container 编号与总字节数。
+
+### 11.2 取源
+
+按工程是否存在分两条路：
+
+| 情况 | 做法 |
+|---|---|
+| 有与在售 bank 一致的 Wwise 工程 | 直接进入 11.3 |
+| 只有字母名 wav 素材 | `new_bank_project.py --proj <目录> --bank <Bank名> --media <wav目录> --category voice` |
+| 只剩 bank 与 `.txt` 侧车 | `speech_rebuild.py --bank <Bank>.bnk --proj <目录> --name <Bank名> --work <中间目录> [--generate]` |
+
+`speech_rebuild.py` 需要 `vgmstream-cli`：Wwise 私有 ADPCM 用 ffmpeg 解会报 `block_predictor`，这是已知现象。
+
+### 11.3 工程可信度
+
+```
+python voice_shortid.py verify-project <工程目录>
+```
+
+判据：三个锚点齐全、语音对象都在 `id424381547` 子树下、退出码 0。锚点被换过的工程副本会在这里被挡住——用它生成的 bank 语音停不下来。
+
+### 11.4 事件补齐
+
+工程与成品的事件集合不一致时先补齐，再谈改号：
+
+```
+python wwise_wire.py <工程目录> --add-stop <Play事件名>
+```
+
+它按同工程既有 Stop 动作的结构补建 `Stop_<去 Play_ 的名字>`，并把新事件加进收录了该 Play 事件的 SoundBank。
+
+已知限制：`ObjectExclusionList` 里放事件引用会让 Wwise 判 `Project contains errors and cannot be loaded`，两种属性写法都失败。想缩小 bank 收录范围，只加减收录表。
+
+### 11.5 内容对齐
+
+先不改号生成一次，与在售 bank 比对：
+
+```
+python bank_compare.py <新生成 bank> <在售 bank> [--media size]
+```
+
+- 未改号的重生成：用默认 `--media id`，要求事件编号、媒体编号与尺寸、对象计数三项全同，退出码 0。
+- 解码重建出来的工程：用 `--media size`，媒体编号会被重新分配，只比尺寸多重集。
+
+判据不过就不要改号：要么工程落后于成品，要么取到了错误的工程副本。
+
+### 11.6 改号
+
+```
+python voice_shortid.py assign <工程目录> --project <mod 目录名>
+python voice_shortid.py check  <工程目录> --project <mod 目录名>
+```
+
+`check` 退出码必须是 0。
+
+### 11.7 生成与产物验收
+
+```
+python wwise_wire.py <工程目录> --generate <Bank名>
+python voice_shortid.py verify-bank <生成物.bnk> <工程目录> --project <mod 目录名>
+python bank_compare.py <生成物.bnk> <在售 bank> --media size
+```
+
+判据：`verify-bank` 退出码 0；`bank_compare` 事件编号零差异、媒体尺寸一致。
+
+### 11.8 同步
+
+`.bnk`、`.txt`、`.xml` 三个文件同时写入源工程与游戏加载副本，逐字节核对 sha1 一致。只写一边会让下一次上传或调试拿到不同版本。

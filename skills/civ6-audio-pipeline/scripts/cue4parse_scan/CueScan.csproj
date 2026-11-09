@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 依赖本机 FModel 安装的 CUE4Parse 全套 DLL；版本目录可用 /p:Cue4ParseDir=... 覆盖 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>CueScan</AssemblyName>
+    <RootNamespace>CueScan</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Cue4ParseDir Condition="'$(Cue4ParseDir)' == ''">E:\SoftWares\FModelMcp\versions\1.1.1-d34a1cf64367</Cue4ParseDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="CUE4Parse">
+      <HintPath>$(Cue4ParseDir)\CUE4Parse.dll</HintPath>
+    </Reference>
+    <Reference Include="CUE4Parse-Conversion">
+      <HintPath>$(Cue4ParseDir)\CUE4Parse-Conversion.dll</HintPath>
+    </Reference>
+    <Reference Include="CUE4Parse-Natives">
+      <HintPath>$(Cue4ParseDir)\CUE4Parse-Natives.dll</HintPath>
+    </Reference>
+    <Reference Include="Oodle.NET">
+      <HintPath>$(Cue4ParseDir)\Oodle.NET.dll</HintPath>
+    </Reference>
+    <Reference Include="OodleSharp">
+      <HintPath>$(Cue4ParseDir)\OodleSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="K4os.Compression.LZ4">
+      <HintPath>$(Cue4ParseDir)\K4os.Compression.LZ4.dll</HintPath>
+    </Reference>
+    <Reference Include="K4os.Compression.LZ4.Streams">
+      <HintPath>$(Cue4ParseDir)\K4os.Compression.LZ4.Streams.dll</HintPath>
+    </Reference>
+    <Reference Include="K4os.Hash.xxHash">
+      <HintPath>$(Cue4ParseDir)\K4os.Hash.xxHash.dll</HintPath>
+    </Reference>
+    <Reference Include="Blake3">
+      <HintPath>$(Cue4ParseDir)\Blake3.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(Cue4ParseDir)\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="BouncyCastle.Cryptography">
+      <HintPath>$(Cue4ParseDir)\BouncyCastle.Cryptography.dll</HintPath>
+    </Reference>
+    <Reference Include="GenericReader">
+      <HintPath>$(Cue4ParseDir)\GenericReader.dll</HintPath>
+    </Reference>
+    <Reference Include="MemoryPack.Core">
+      <HintPath>$(Cue4ParseDir)\MemoryPack.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="CommunityToolkit.HighPerformance">
+      <HintPath>$(Cue4ParseDir)\CommunityToolkit.HighPerformance.dll</HintPath>
+    </Reference>
+    <Reference Include="IndexRange">
+      <HintPath>$(Cue4ParseDir)\IndexRange.dll</HintPath>
+    </Reference>
+    <Reference Include="FixedMathSharp">
+      <HintPath>$(Cue4ParseDir)\FixedMathSharp.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

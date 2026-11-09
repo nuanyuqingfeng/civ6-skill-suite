@@ -1,0 +1,26 @@
+# 官方文本 版本专属图标表（主表之外的图标，限制引用）
+# 出处=仅原版：只出现在原版口径文本；风云变幻环境已无对应内容，工程**禁止**引用
+# 出处=仅风云变幻：风云变幻新增；目标环境为风云变幻时可正常引用，面向纯原版环境则不可引用
+图标	出处	类别	语料搭配名词	语料搭配频次	尺寸变体
+GLORY_DARK_AGE	仅风云变幻	时代	黑暗时代	3	
+GLORY_NORMAL_AGE	仅风云变幻	时代	普通时代	3	
+GLORY_SUPER_GOLDEN_AGE	仅风云变幻	时代	英雄时代	3	
+GOSSIP_CLIMATE	仅风云变幻	符号		0	
+GRIEVANCE	仅风云变幻	外交	不满	4	
+GRIEVANCE_TT	仅风云变幻	外交		0	
+PowerInsufficient	仅风云变幻	城市		0	
+PowerRight	仅风云变幻	城市		0	
+PressureDown	仅风云变幻	宗教		0	
+PressureUp	仅风云变幻	宗教		0	
+RESOURCE_COAL	仅风云变幻	资源	煤	4	
+RESOURCE_HORSES	仅风云变幻	资源		0	
+Resource_Niter	仅风云变幻	资源		0	
+RESOURCE_OLIVES	仅风云变幻	资源		0	
+Reward_Bronze	仅风云变幻	外交	青铜级奖励	2	
+Reward_Gold	仅风云变幻	外交	黄金级奖励	2	
+Reward_Member	仅风云变幻	外交	成员国奖励	2	
+Reward_None	仅风云变幻	外交		0	
+Reward_Silver	仅风云变幻	外交	白银级奖励	2	
+Reward_Target	仅风云变幻	外交	目标国奖励	2	
+STAT_GOVERNOR	仅风云变幻	城市	总督点数	2	
+VisOpen	仅风云变幻	外交		0	

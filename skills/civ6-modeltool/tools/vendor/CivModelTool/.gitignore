@@ -1,0 +1,10 @@
+cmt_exporter/dependencies/Firaxis.Granny.Impl.dll.i64
+cmt_exporter/dependencies/*.old-*.dll
+cmt_exporter/dependencies/_orig_backup/
+__pycache__/
+*.pyc
+*.pdb
+*.ida
+.serena/
+tests/
+docs/

@@ -1,0 +1,14 @@
+# 改名演示：JX_IDLE.fbx 已改名为 JX_IdleA.fbx，只改本行即可（无需重编 exe）
+model.cn6	LEAD_Jinhsi_QYQXP.cn6
+model.fbx	LEAD_Jinhsi_QYQXP_Model.fbx
+model.tmp	LEAD_Jinhsi_QYQXP_src.fgx
+model.dst	LEAD_Jinhsi_QYQXP.fgx
+model.node	JinhsiBody
+model.placement	0
+anim	JX_IdleA
+anim	JX_FirstMeet
+anim	JX_DeclareWarHuman
+anim	JX_DeclareWarAI
+anim	JX_Kudos
+anim	JX_Warning
+anim	JX_Defeat

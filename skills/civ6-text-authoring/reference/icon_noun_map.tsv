@@ -1,0 +1,119 @@
+# 官方文本 名词↔Icon 主表（原版+风云变幻通用图标）
+# 数据源：reference/zh_corpus.sqlite（风云变幻有效 zh 文本）；由 scripts/analyze_icon_nouns.py 生成
+# 用法：名词→图标按「首选名词」查（唯一指向，另见同名 .json）；「别名名词」为官方亦用的其他说法
+# 名词校验（图标后接的名词必须在表内）用 python scripts/analyze_icon_nouns.py --check <工程文本>
+# 首选名词为空的图标：官方文本中不与名词连用（符号类，或前置式使用）
+图标	类别	首选名词	别名名词	语料搭配频次	尺寸变体
+Amenities	城市	宜居度		98	
+AntiAir	战斗	防空战斗力		2	AntiAir
+Army	战斗	军队	无敌舰队	0	
+Barbarian	战斗	蛮族		0	
+BOLT	其他			0	
+Bombard	战斗	轰炸攻击力	炮击攻击力、炮击	8	
+Bullet	符号			0	
+Capital	城市	首都		18	
+Charges	战斗	使用次数	劳动力	0	
+CheckFail	符号			0	
+Citizen	城市	人口	公民	47	
+CivicBoosted	产出	鼓舞		17	
+Corps	战斗	军团	舰队	0	
+Culture	产出	文化值		157	
+Damaged	战斗	受伤	生命值	0	
+District	城市			0	
+Envoy	外交	使者		48	
+Exclamation	符号			0	
+Faith	产出	信仰值	信仰	155	Faith
+Favor	外交	外交支持		46	FAVOR
+Food	产出	食物	粮食	96	
+GLORY_GOLDEN_AGE	时代	黄金时代		4	
+Gold	产出	金币	黄金	182	Gold
+GOSSIP_ALL	符号			0	
+GOSSIP_BARBARIAN	符号			0	
+GOSSIP_CITY	符号			0	
+GOSSIP_CULTURE	符号			0	
+GOSSIP_DIPLOMACY	符号			0	
+GOSSIP_DISCOVER	符号			0	
+GOSSIP_ESPIONAGE	符号			0	
+GOSSIP_GREATPERSON	符号			0	
+GOSSIP_MILITARY	符号			0	
+GOSSIP_RELIGION	符号			0	
+GOSSIP_SCIENCE	符号			0	
+GOSSIP_SETTLEMENT	符号			0	
+GOSSIP_VICTORY	符号			0	
+Governor	城市	总督	总督头衔	33	
+GreatAdmiral	伟人	海军统帅点数		8	
+GreatArtist	伟人	大艺术家		11	
+GreatEngineer	伟人	大工程师	大工程师点数	10	
+GreatGeneral	伟人	大将军点数	大将军	12	
+GreatMerchant	伟人	大商人点数	大商人	9	
+GreatMusician	伟人	大音乐家点数	大音乐家	12	
+GreatPerson	伟人	伟人	伟人点数	53	
+GreatProphet	伟人	大预言家点数	大预言家	13	
+GreatScientist	伟人	大科学家点数	大科学家	9	
+GreatWork_Artifact	巨作	文物	远古文物、古典文物、工业时代文物、中世纪文物、文艺复兴文物	22	
+GreatWork_HeroRelic	巨作	英雄遗物		0	
+GreatWork_Landscape	巨作	艺术巨作	风景	5	
+GreatWork_Music	巨作	音乐		3	
+GreatWork_Portrait	巨作	肖像		2	
+GreatWork_Product	巨作			0	
+GreatWork_Relic	巨作	遗物		16	
+GreatWork_Religious	巨作			0	
+GreatWork_Sculpture	巨作	雕塑		2	
+GreatWork_Writing	巨作	著作		7	
+GreatWriter	伟人	大作家		14	
+Host	外交			0	
+Housing	城市	住房		68	
+Lifespan	其他	寿命		2	
+Movement	战斗	移动力		105	
+New	符号			0	
+Power	产出	电力		33	
+Production	产出	生产力		221	Production
+Range	战斗	射程	范围	11	
+Ranged	战斗	远程攻击力	远程攻击	13	
+Religion	宗教	宗教	宗教战斗力	13	
+Reports	符号			0	
+RESOURCE_ALUMINUM	资源			0	
+RESOURCE_ANTIQUITY_SITE	资源	历史古迹		0	
+RESOURCE_BANANAS	资源	香蕉		2	
+RESOURCE_CATTLE	资源			0	
+RESOURCE_CINNAMON	资源	肉桂		2	
+RESOURCE_CITRUS	资源			0	
+RESOURCE_CLOVES	资源			0	
+RESOURCE_COCOA	资源			0	
+Resource_Coffee	资源	咖啡		2	
+RESOURCE_Copper	资源			0	
+RESOURCE_COSMETICS	资源			0	
+RESOURCE_COTTON	资源			0	
+RESOURCE_CRABS	资源			0	
+RESOURCE_DEER	资源			0	
+RESOURCE_DYES	资源			0	
+RESOURCE_FISH	资源			0	
+RESOURCE_INCENSE	资源			0	
+RESOURCE_IRON	资源	铁		2	
+RESOURCE_JEANS	资源			0	
+RESOURCE_OIL	资源	石油		5	
+RESOURCE_PERFUME	资源			0	
+RESOURCE_SHEEP	资源			0	
+RESOURCE_SHIPWRECK	资源	海难遗址		0	
+RESOURCE_SILK	资源			0	
+RESOURCE_SPICES	资源			0	
+RESOURCE_STONE	资源			0	
+RESOURCE_SUGAR	资源			0	
+RESOURCE_TEA	资源			0	
+RESOURCE_TOBACCO	资源			0	
+RESOURCE_TOYS	资源			0	
+Resource_Uranium	资源	铀		5	
+RESOURCE_WINE	资源			0	
+Science	产出	科技值		98	
+STAT_GRIEVANCE	外交	不满		44	
+Strength	战斗	战斗力	防御力	282	
+TechBoosted	产出	尤里卡时刻	尤里卡	41	
+ThemeBonus	巨作			0	
+ThemeBonus_Active	巨作			0	
+Tourism	产出	旅游业绩	游客	93	
+TradeRoute	外交	贸易路线	贸易路线容量	86	TradeRoute
+TradingPost	外交	贸易站		11	
+Turn	城市	回合		5	
+Unit	符号			0	
+VisLimited	外交			0	
+VisSecret	外交			0	

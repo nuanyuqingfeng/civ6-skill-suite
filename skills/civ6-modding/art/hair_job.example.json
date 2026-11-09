@@ -1,0 +1,16 @@
+{
+  "_comment": "复制一份改名 job.json 后填真实路径。字段缺省时取脚本 DEFAULTS。",
+  "proj_tex": "<SLN>/<ModName>/Textures",
+  "src_dir": "<解包源目录，含 <SRC_PREFIX>{Hair,Bangs}_D.png 与 _HM.png>",
+  "src_prefix": "T_R2T1<角色>Md10011",
+  "tex_prefix": "MI_R2T1<角色>Md10011",
+  "parts": ["Hair", "Bangs"],
+  "texconv": "C:/Users/Administrator/.agents/skills/civ6-modding/art/bin/texconv.exe",
+  "work": "<SLN>/workspace/tmp/hair_refine",
+  "params": {
+    "shadow": [34, 38, 56],
+    "tint": [95, 142, 200],
+    "grad_color": [227, 245, 251],
+    "p95_cap": { "Hair": 118, "Bangs": 72 }
+  }
+}

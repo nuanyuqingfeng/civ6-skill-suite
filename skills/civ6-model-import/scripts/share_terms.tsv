@@ -1,0 +1,69 @@
+scope	pattern	replacement
+ALL	D:/ZcodeWorkPlace/fmodel-mcp	<FModel MCP 源码树>
+ALL	D:\ZcodeWorkPlace\fmodel-mcp	<FModel MCP 源码树>
+ALL	R2T1ShouanrenMd10011	<模型资产名>
+ALL	R2T1DaniyaMd10011	<模型资产名>
+ALL	G:/Wuwa_3D_Assets	<素材根>
+ALL	G:\Wuwa_3D_Assets	<素材根>
+ALL	R2T1JinxiMd10011	<模型资产名>
+ALL	R2T1JinxiMd20011	<模型资产名>
+ALL	Jinzhou_Yusanjia	多角色工程
+ALL	RibbonAnim 二次运动层	次级运动层
+ALL	Wuthering Waves	UE 项目
+ALL	Stand1_Action01	待机表演片段一
+ALL	Stand1_Action02	待机表演片段二
+ALL	Stand1_Action03	待机表演片段三
+ALL	Ui_Nature_Start	界面登场片段
+ALL	Ui_Weapon_Start	武器页起手片段
+ALL	UnitRoverFemale	UnitCaseB
+ALL	R2T1<角色>Md<编号>	<资产代号>
+ALL	Ui_Nature_Loop	界面待机循环
+ALL	Ui_Weapon_Loop	武器页循环
+ALL	Jinzhou_Jinhsi	案例甲工程
+ALL	db_phantom.db	<角色配置库>
+ALL	Stand1_Action	待机表演片段
+ALL	UnitRoverArtM	UnitCaseC
+FRONTMATTER	把鸣潮等 UE 工程的	把 UE 工程的
+ALL	JINZ_Jinhsi	案例甲
+ALL	Yarik0chka/	
+ALL	yarik0chka/	
+ALL	RibbonAnim3	次级运动目录
+ALL	Team_Stand1	队伍站姿片段一
+ALL	Team_Stand2	队伍站姿片段二
+ALL	Team_Stand3	队伍站姿片段三
+ALL	R2T1Daniya	<模型资产名>
+ALL	RibbonAnim	次级运动目录
+ALL	rover_view	unitview
+ALL	wuwa-keys	key-list
+ALL	RoverUnit	UnitCaseA
+ALL	UnitRover	UnitCaseA
+ALL	roverunit	unitcase
+ALL	Cos_Pose	换装姿势片段
+ALL	Md10011	<主形态>
+ALL	Md20011	<第二形态>
+ALL	Jinhsi	案例甲
+ALL	jinhsi	case-a
+ALL	UiAnim	界面动画目录
+ALL	JINZ_	CASE_
+ALL	Jinxi	案例甲
+ALL	jinxi	case-a
+ALL	Denia	正样本
+ALL	Rover	CaseUnit
+ALL	R2T1	<资产代号>
+ALL	Wuwa	UE 项目
+ALL	wuwa	ue-project
+ALL	Kuro	上游厂商
+ALL	守岸人	案例乙
+ALL	达妮娅	正样本
+ALL	御三家	多角色案例
+ALL	漂泊者	单位丙
+ALL	今汐	案例甲
+ALL	薄荷	案例丙
+ALL	长离	案例丁
+ALL	秧秧	案例戊
+ALL	炽霞	案例己
+ALL	白芷	案例庚
+ALL	女漂	单位甲
+ALL	男漂	单位乙
+ALL	声痕	轮廓贴片
+ALL	鸣潮	某 UE 项目

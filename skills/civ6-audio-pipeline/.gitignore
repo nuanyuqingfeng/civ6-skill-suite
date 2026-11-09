@@ -1,0 +1,11 @@
+# ---- Python / 运行缓存 ----
+__pycache__/
+*.pyc
+
+# ---- MacOS / 编辑器噪声 ----
+.DS_Store
+Thumbs.db
+
+# ---- 本机私有 / 运行状态（分享时不携带）----
+local_paths.json
+state/id_registry.json

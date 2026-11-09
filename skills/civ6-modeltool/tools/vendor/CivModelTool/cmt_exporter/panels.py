@@ -1,0 +1,250 @@
+import bpy
+from .allowed_classes import get_allowed_geo_classes, get_allowed_anm_classes
+from .enum_items import resolve_enum, get_ast_class_items, get_geotype_items, get_anmtype_items
+from .properties import CMT_Exporter_Settings,CMT_Exporter_PG_AstAnimationProperty,CMT_Exporter_PG_AstGeometryProperty
+
+class CMT_Exporter_PT_Panel(bpy.types.Panel):
+    bl_label = "导出"
+    bl_idname = "CMT_Exporter_PT_Panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Civ6ModelTool"
+
+    # 自定义界面布局
+    def draw(self, context):
+        layout = self.layout
+        data = context.scene.CMT.ExporterSettings
+        
+        self.draw_general_options(layout,context)
+        self.draw_model_options(layout,context)
+        self.draw_animation_options(layout,context)
+        self.draw_ref_options(layout,context)
+        
+        #绘制导出按钮
+        column = layout.column()
+        column.enabled = data.IsExportAnimation or data.IsExportModel or data.IsGenerateRef
+        column.operator("cmt.exporter_ot_export")
+        
+    def draw_general_options(self, layout, context) -> None:
+        data = context.scene.CMT.ExporterSettings
+        box = layout.box()
+        
+        box.label(text = "常规设置",icon= "SETTINGS")
+        column = box.column()
+        column.prop(data,"ProjectPath")
+
+    def draw_model_options(self, layout, context) -> None:
+        data = context.scene.CMT.ExporterSettings
+        box = layout.box()
+
+        box.prop(data,"IsExportModel",icon = "OUTLINER_OB_MESH")
+        box.enabled = data.ProjectPath != ""
+        if data.IsExportModel:
+            box1= box.split(factor=0.02)
+            box1.column()
+            column : bpy.types.UILayout = box1.column()
+            column.label(text="模型导出列表",icon="MESH_DATA")
+            
+            innerBox = column.box()
+            col = innerBox.column()
+            
+            addOrRemoveRow = col.row(align=True)
+            addOrRemoveRow.operator("cmt.exporter_ot_addgeometry", icon="ADD")
+            addOrRemoveRow.operator("cmt.exporter_ot_removegeometry", icon="REMOVE")
+            if len(data.GeoList) > 0:
+                curGeo = data.GeoList[data.CurrentGeoIndex]
+                col.prop(data,"GeoName")
+                col.prop(curGeo,"Class")
+                row = col.row()
+                row.template_list("CMT_Exporter_UL_MeshList", "", curGeo, "Geometries", curGeo, "ActivedPropertyIndex")
+                sidebar = row.column(align = True)  
+                sidebar.operator("cmt.exporter_ot_addmesh", text="", icon="ADD")
+                sidebar.operator("cmt.exporter_ot_removemesh", text="", icon="REMOVE")
+                column.separator()
+                column.prop(data,"UVCount")
+                column.prop(data,"IsTriangulation")
+    def draw_animation_options(self, layout, context) -> None:
+        data = context.scene.CMT.ExporterSettings
+        box = layout.box()
+        box.prop(data,"IsExportAnimation",icon = "ACTION")
+        box.enabled = data.ProjectPath != ""
+        if data.IsExportAnimation:
+            splited_box1= box.split(factor=0.02)
+            splited_box1.column()
+            column : bpy.types.UILayout = splited_box1.column()
+            column.label(text="动画导出列表",icon="ACTION")
+            row = column.row()
+            row.template_list("CMT_Exporter_UL_AnimationList", "", data, "AnimationList", data, "ActivedAnimationIndex")
+            sidebar = row.column(align = True)
+            sidebar.operator("cmt.exporter_ot_addanimation", text="", icon="ADD")
+            sidebar.operator("cmt.exporter_ot_removeanimation", text="", icon="REMOVE")
+            underRow = column.row()
+            underRow.prop(data,"ActionNameToAdd")
+            underRow.operator("cmt.exporter_ot_addactionsbykeyword")
+            column.separator()
+            column.prop(data,"Compress")
+                
+    def draw_ref_options(self, layout, context) -> None:
+        data = context.scene.CMT.ExporterSettings
+        box = layout.box()
+        box.prop(data,"IsGenerateRef",icon = "FILE")
+        box.enabled = data.ProjectPath != ""
+        if data.IsGenerateRef:
+            splited_box1= box.split(factor=0.02)
+            splited_box1.column()
+            col : bpy.types.UILayout = splited_box1.column()
+            col.prop(data,"IsExportAst",icon="META_CUBE")
+            if  data.IsExportAst:
+                astBox = col.box()
+                astCol = astBox.column()
+                addOrRemoveRow = astCol.row(align=True)
+                addOrRemoveRow.operator("cmt.exporter_ot_addast", icon="ADD")
+                addOrRemoveRow.operator("cmt.exporter_ot_removeast", icon="REMOVE")
+                astFileRow = astCol.row()
+                
+                if len(data.AstList) > 0:
+                    curAst = data.AstList[data.CurrentAstIndex]
+                    astFileRow.prop(
+                    data, "AstName",translate=False)
+                    astCol.prop(curAst,"Class",translate=False)
+                    astCol.prop(curAst,"DSG",translate=False)
+                    astProperties = astCol.row(align=True)
+                    astProperties.prop(data,"AstShowProperty",expand=True)
+                    
+
+                    propName = data.AstShowProperty
+                    templateRow = astCol.row()
+                    
+                    templateRow.template_list("CMT_Exporter_UL_AstPropertiesList", "", curAst, propName, curAst,  "ActivedPropertyIndex",maxrows=10)
+                    sidebar = templateRow.column(align = True)
+                    sidebar.operator("cmt.exporter_ot_addref", text="", icon="ADD")
+                    sidebar.operator("cmt.exporter_ot_removeref", text="", icon="REMOVE")
+                    if propName == "Animations":
+                        sidebar.enabled = False
+                        astCol.operator("cmt.exporter_ot_matchanimations", text="一键匹配动画", icon="ACTION")
+                    
+            col.prop(data,"IsExportMaterial",icon="MATERIAL")
+            matCol = col.column()
+            if data.IsExportMaterial:
+                has_geo = any(len(ast.Geometries) > 0 for ast in data.AstList)
+                if not has_geo:
+                    matCol.label(text="所有ast均未添加模型引用，无法编辑材质", icon="ERROR")
+                else:
+                    matCol.prop(data,"MaterialName")
+                    if data.MaterialName and data.CurrentMatIndex < len(data.MaterialList):
+                            curMat = data.MaterialList[data.CurrentMatIndex]
+
+                            matCol.prop(curMat,"Class")
+
+                            matCol.template_list("CMT_Exporter_UL_TextureList", "", curMat, "Textures", curMat,  "ActivedPropertyIndex",maxrows=10)
+
+                    matchRow = matCol.row(align=True)
+                    matchRow.operator("cmt.exporter_ot_automatchtextures",text="自动匹配贴图", icon="NODE_MATERIAL")
+                    matchRow.prop(data,"OverwriteTextures",text="覆盖已有值")
+
+                scriptCol = col.column()
+                scriptCol.prop(data,"MaterialKeywords")
+                batchModifyRow = scriptCol.row()
+                batchModifyRow.prop(data,"MaterialTargetClass")
+                batchModifyRow.operator("cmt.exporter_ot_modifymattypebykeywords",text="按关键字修改材质类型")
+
+                scriptCol.prop(data,"TextureCompressionRate")
+                scriptCol.prop(data,"TexEmbededExportScript")
+                scriptCol.prop(data,"TexCustomExportScript")
+                scriptCol.enabled = data.IsExportMaterial and has_geo
+            col.prop(data,"IsExportArtdef",icon="ASSET_MANAGER")
+            artdefCol = col.column()
+            if data.IsExportArtdef and len(data.ArtdefList) > 0:
+                artdefCol.prop(data,"ArtdefName")
+                curArtdef = data.ArtdefList[data.CurrentArtdefIndex]
+                
+                templateRow = artdefCol.row()
+                
+                templateRow.template_list("CMT_Exporter_UL_ArtdefReferenceList", "", curArtdef, "Instances", curArtdef,  "ActivedPropertyIndex",maxrows=10)
+                sidebar = templateRow.column(align = True)
+                sidebar.operator("cmt.exporter_ot_addartdefref", text="", icon="ADD")
+                sidebar.operator("cmt.exporter_ot_removeartdefref", text="", icon="REMOVE")
+
+                
+                
+        
+class CMT_Exporter_UL_MeshList(bpy.types.UIList):
+    def draw_item(self, context, layout, data : CMT_Exporter_Settings, item, icon, active_data, active_propname,index):
+
+        row = layout.row()
+
+        split = row.split(factor=0.1 )
+        split.label(text="   "+ str(index+1))
+        split.prop(item,"value",text="",icon ="MESH_DATA")
+        
+        
+class CMT_Exporter_UL_AnimationList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname,index):
+        row = layout.row()
+
+        split = row.split(factor=0.15 )
+        split.label(text="   "+ str(index+1))
+        split.prop(item,"value",text="")
+        split.prop(item,"Class",text="")
+
+class CMT_Exporter_UL_AstPropertiesList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname,index):
+        row = layout.row()
+
+        split = row.split(factor=0.2 )
+        if type(item) == CMT_Exporter_PG_AstAnimationProperty:
+            split.label(text=item.text)
+        else:
+            split.label(text="   "+ str(index+1))
+        split.prop(item,"value",text="")
+
+        invalid = False
+        hint = ""
+        settings = context.scene.CMT.ExporterSettings
+        curAst = data
+
+        if type(item) == CMT_Exporter_PG_AstGeometryProperty:
+            geoClass = None
+            for geo in settings.GeoList:
+                if geo.FileName == item.value:
+                    geoClass = resolve_enum(geo, "Class", get_geotype_items)
+                    break
+            allowed = get_allowed_geo_classes(resolve_enum(curAst, "Class", get_ast_class_items))
+            if geoClass and geoClass not in allowed:
+                invalid = True
+                hint = f"类型 {geoClass} 不被允许"
+
+        elif type(item) == CMT_Exporter_PG_AstAnimationProperty:
+            anmClass = None
+            if item.value:
+                for anm in settings.AnimationList:
+                    if anm.value is item.value:
+                        anmClass = resolve_enum(anm, "Class", get_anmtype_items)
+                        break
+            allowed = get_allowed_anm_classes(resolve_enum(curAst, "Class", get_ast_class_items))
+            if anmClass and anmClass not in allowed:
+                invalid = True
+                hint = f"类型 {anmClass} 不被允许"
+
+        if invalid:
+            row = layout.row()
+            row.label(text=hint, icon='ERROR')
+        
+class CMT_Exporter_UL_TextureList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname,index):
+        row = layout.row()
+
+        # 保持原来的两段结构，通道下拉直接挂在行尾；实测 0.2 / 0.5 / 0.25 上下最匀
+        split = row.split(factor=0.2)
+        split.label(text=item.text,text_ctxt = "CMT")
+        split.prop(item,"value",text="")
+        row.prop(item,"Channel",text="")
+        
+class CMT_Exporter_UL_ArtdefReferenceList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname,index):
+        row = layout.row()
+
+        split = row.split(factor=0.5)
+        
+        split.prop(item,"Type")
+        split.prop(item,"value")

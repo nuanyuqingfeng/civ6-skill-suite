@@ -1,0 +1,255 @@
+# -*- coding: utf-8 -*-
+"""本机 Civ6 关键路径解析（P1–P6），全 civ6-modding/tools 共用。
+
+解析顺序（与 SKILL.md「环境路径总表」一致）：
+  1) `civ6-modding/local_paths.json`（个人环境文件，分享时不携带）
+  2) 注册表 HKCU\\SOFTWARE\\Firaxis\\Civilization6_ModBuddy\\... → UserPath / AssetsPath / ToolsPath
+  3) 硬编码默认值
+  4) Steam libraryfolders.vdf 推断（游戏本体）
+
+只读操作，不修改任何路径。
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+
+SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOCAL_PATHS = os.path.join(SKILL_DIR, "local_paths.json")
+
+DEFAULTS = {
+    "modbuddy": r"D:\documents\Firaxis ModBuddy\Civilization VI",
+    "mods": r"D:\documents\My Games\Sid Meier's Civilization VI\Mods",
+    "game": r"F:\Steam\steamapps\common\Sid Meier's Civilization VI",
+    "sdk_assets": r"F:\Steam\steamapps\common\Sid Meier's Civilization VI SDK Assets",
+    "sdk": r"F:\Steam\steamapps\common\Sid Meier's Civilization VI SDK",
+    "workshop_ref": r"F:\Steam\steamapps\workshop\content\289070",
+}
+
+# 外部可执行/工具路径（同样可被 local_paths.json 覆盖）—— 全 skill 的"路径收纳"单一真源
+TOOL_DEFAULTS = {
+    "uploader": r"D:\documents\Civ6WorkshopUploader\tool\Civ6WorkshopUploader.exe",
+    "sd_cpp": os.path.expandvars(r"%USERPROFILE%\sd-cpp"),
+    "imagemagick": r"C:\Program Files\ImageMagick-7.1.2-Q16-HDRI\magick.exe",
+    "luac": r"E:\SoftWares\Lua\5.1\luac.exe",
+    "ws_root": os.path.join(os.environ.get("TEMP", r"C:\Windows\Temp"), "civ6-ws"),
+    "steam_logs": r"F:\Steam\logs",
+    # --- 可选外部工具（**不属于必需链路，缺失不影响任何流程**）---
+    # NVTT（NVIDIA Texture Tools）自带的 DDS 诊断三件套。**不随本 skill 分发**：
+    # NVTT 是 NVIDIA 专有 SDK 许可（不是 MIT），与 art/bin/texconv.exe 的可再分发口径不同。
+    # 工程 DDS 一律未压缩 RGBA8 且单 mip（见 art-pipeline §484），**用不到 BCn 压缩**，
+    # 所以这里只登记"本机已装则可选调用"的路径键，绝不作为依赖。
+    # 用途仅限诊断：nvddsinfo 读 DDS 头、nvimgdiff 比对两张图。
+    "nvtt_dir": r"C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools",
+}
+
+
+REG_KEY = (r"SOFTWARE\Firaxis\Civilization6_ModBuddy\2013\DialogPage"
+           r"\Firaxis.VisualStudio.Projects.Civ6.OptionsPages.OptionsDialogPage")
+
+_overrides: dict | None = None
+
+
+def _load_overrides() -> dict:
+    global _overrides
+    if _overrides is None:
+        _overrides = {}
+        if os.path.isfile(LOCAL_PATHS):
+            try:
+                with open(LOCAL_PATHS, encoding="utf-8") as f:
+                    _overrides = json.load(f)
+            except Exception as e:  # 坏文件不阻断，回落到默认
+                print("WARN 读取 %s 失败：%s" % (LOCAL_PATHS, e), file=sys.stderr)
+    return _overrides
+
+
+def _registry_paths() -> dict:
+    """注册表三值：UserPath / AssetsPath / ToolsPath（ToolsPath 去尾部 ' SDK'）。"""
+    out = {}
+    try:
+        import winreg  # type: ignore
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY) as k:
+            for name, slot in (("UserPath", "mods"), ("AssetsPath", "sdk_assets"), ("ToolsPath", "sdk")):
+                try:
+                    v, _ = winreg.QueryValueEx(k, name)
+                    if v:
+                        out[slot] = v
+                except OSError:
+                    pass
+    except Exception:
+        return {}
+    if "mods" in out:
+        out["mods"] = os.path.join(out["mods"], "Mods")
+    return out
+
+
+def _steam_game_root() -> str | None:
+    """从 Steam libraryfolders.vdf 找 appid 289070 的安装目录。"""
+    libs = []
+    for steam in (r"F:\Steam", r"C:\Program Files (x86)\Steam", r"D:\Steam"):
+        vdf = os.path.join(steam, "steamapps", "libraryfolders.vdf")
+        if not os.path.isfile(vdf):
+            continue
+        try:
+            txt = open(vdf, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        libs += re.findall(r'"path"\s+"([^"]+)"', txt)
+    for lib in libs:
+        cand = os.path.join(lib.replace("\\\\", "\\"), "steamapps", "common", "Sid Meier's Civilization VI")
+        if os.path.isdir(cand):
+            return cand
+    return None
+
+
+def get(key: str, must_exist: bool = True) -> str | None:
+    """取路径。key ∈ modbuddy/mods/game/sdk_assets/sdk/workshop_ref。"""
+    if key not in DEFAULTS:
+        raise KeyError("未知路径键：%s（可选：%s）" % (key, ", ".join(DEFAULTS)))
+    cand = _load_overrides().get(key)
+    if not cand:
+        cand = _registry_paths().get(key)
+    if not cand and key == "game":
+        cand = _steam_game_root()
+    if not cand:
+        cand = DEFAULTS[key]
+    if key in ("sdk", "sdk_assets") and cand and not os.path.isdir(cand) and "game" not in cand:
+        pass
+    if must_exist and not os.path.exists(cand):
+        return None
+    return cand
+
+
+def require(key: str) -> str:
+    p = get(key)
+    if not p:
+        raise SystemExit(
+            "找不到路径 %s。请把本机实际路径写入 %s（形如 {\"%s\": \"...\"}）。" % (key, LOCAL_PATHS, key))
+    return p
+
+
+def mods_root() -> str | None:
+    """Mods 加载根目录（解析结果；解析不到返回 None）。"""
+    return get("mods", must_exist=False)
+
+
+def _norm(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path)).rstrip("\\/")
+
+
+def is_under(path: str, root: str | None) -> bool:
+    """path 是否位于 root 之下（含两者相等）；大小写不敏感。"""
+    if not path or not root:
+        return False
+    p, r = _norm(path), _norm(root)
+    return p == r or p.startswith(r + os.sep)
+
+
+def assert_source_tree(path: str, what: str = "源工程目录") -> None:
+    """断言 path 不在 Mods 加载树内，命中即 SystemExit(2)（调用方须在写盘前调用）。
+
+    游戏递归扫描 Mods 目录，工程目录一旦落在其中，构建产物 <ModName>.modinfo 会被当成
+    第二个 mod 收录，同一 GUID 出现两条记录（「额外内容」界面出现两份同名 mod）。
+    """
+    root = mods_root()
+    if not is_under(path, root):
+        return
+    print(
+        "FAIL %s 位于 Mods 加载树内，拒绝执行：\n"
+        "   工程：%s\n"
+        "   Mods：%s\n"
+        "游戏递归扫描 Mods 目录，工程里的构建产物会被当成第二个 mod 收录，\n"
+        "同一 GUID 出现两条记录。把工程放到 ModBuddy 源工程根再部署：\n"
+        '   python "%s" "<源工程根>\\<ModName>" --name <ModName> --deploy'
+        % (what, path, root, os.path.join(SKILL_DIR, "tools", "new_project.py")),
+        file=sys.stderr)
+    raise SystemExit(2)
+
+
+def summary() -> str:
+    rows = []
+    for k in DEFAULTS:
+        p = get(k)
+        rows.append("  %-14s %s  %s" % (k, "[OK]  " if p else "[缺失]", p or DEFAULTS[k]))
+    return "\n".join(rows)
+
+
+def tool(key: str, must_exist: bool = True) -> str | None:
+    """取外部工具路径。key ∈ uploader/sd_cpp/imagemagick/luac/ws_root/steam_logs/nvtt_dir。
+
+    `nvtt_dir` 是**可选**工具（NVTT 安装目录）：缺失返回 None 属正常，调用方须容忍。
+    """
+    if key not in TOOL_DEFAULTS:
+        raise KeyError("未知工具键：%s（可选：%s）" % (key, ", ".join(TOOL_DEFAULTS)))
+    cand = _load_overrides().get(key) or TOOL_DEFAULTS[key]
+    if must_exist and not os.path.exists(cand):
+        return None
+    return cand
+
+
+def require_tool(key: str) -> str:
+    p = tool(key)
+    if not p:
+        raise SystemExit("找不到工具 %s。请把实际路径写入 %s（形如 {\"%s\": \"...\"}）。"
+                         % (key, LOCAL_PATHS, key))
+    return p
+
+
+def tools_summary() -> str:
+    rows = []
+    for k in TOOL_DEFAULTS:
+        p = tool(k)
+        rows.append("  %-14s %s  %s" % (k, "[OK]  " if p else "[缺失]", p or TOOL_DEFAULTS[k]))
+    return "\n".join(rows)
+
+
+if __name__ == "__main__":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    argv = sys.argv[1:]
+
+    # `-h` / `--help`：打印用法后退出。
+    # 此前 `--help` 不被识别 → 走到底部的自检分支，把"路径总表"当成 help 输出，
+    # 不会显示 `--tool` / `--path` 这两个真正有用的子命令（文档缺口）。
+    if argv and argv[0] in ("-h", "--help", "help"):
+        print("用法：")
+        print("  python _paths.py                      # 自检：打印 P1-P6 路径 + 外部工具解析结果（缺失标 [缺失]）")
+        print("  python _paths.py --tool <键>          # 只打印某外部工具路径（供 shell 包装脚本调用）")
+        print("  python _paths.py --path <键>          # 只打印某路径键（P1-P6）")
+        print("")
+        print("路径键（--path）：%s" % ", ".join(DEFAULTS))
+        print("工具键（--tool）：%s" % ", ".join(TOOL_DEFAULTS))
+        print("")
+        print("退出码：0 找到（打印路径）/ 1 未找到 / 2 键名非法或缺参")
+        raise SystemExit(0)
+
+    # `--tool <键>` / `--path <键>`：把解析结果**单独打印**给 shell 包装脚本用
+    # （PowerShell 侧无法 import Python 模块，此前只能各自写死路径 —— 实测
+    #  ensure_uploader.ps1 因此把已装好的机器判成"缺工具"）。
+    # 退出码：0 找到（打印路径）/ 1 未找到或键名非法。
+    if argv and argv[0] in ("-t", "--tool", "-p", "--path"):
+        want_tool = argv[0] in ("-t", "--tool")
+        if len(argv) < 2:
+            print("用法：python _paths.py (--tool|--path) <键名>", file=sys.stderr)
+            raise SystemExit(2)
+        key = argv[1]
+        try:
+            val = tool(key) if want_tool else get(key)
+        except KeyError as e:
+            print(str(e), file=sys.stderr)
+            raise SystemExit(2)
+        if val:
+            print(val)
+            raise SystemExit(0)
+        print("MISSING %s" % key, file=sys.stderr)
+        raise SystemExit(1)
+
+    print("本机 Civ6 路径：")
+    print(summary())
+    print("\n外部工具路径：")
+    print(tools_summary())

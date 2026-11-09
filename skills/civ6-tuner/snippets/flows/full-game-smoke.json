@@ -1,0 +1,157 @@
+{
+  "name": "full-game-smoke",
+  "desc": "按 80 回合实战操作谱压缩的开局→扩张→后期冒烟流程；需先用 gamectl host-game 进入新对局",
+  "vars": {
+    "LEADER": "LEADER_JINHSI_QYQXP",
+    "CIV": "CIVILIZATION_JINZHOU_QYQXP"
+  },
+  "steps": [
+    {
+      "id": "baseline",
+      "action": "snapshot",
+      "note": "开局基线：应有开拓者、无城市",
+      "expect": {
+        "SNAP|turn": "*",
+        "SNAP|city_count": "0"
+      }
+    },
+    {
+      "id": "found-city",
+      "action": "found-city",
+      "note": "开局第一操作：建城",
+      "expect": {
+        "FOUND_CITY_REQUESTED": "*"
+      }
+    },
+    {
+      "id": "city-online",
+      "action": "snapshot",
+      "note": "建城异步结算，轮询到首都出现并捕获坐标",
+      "retries": 20,
+      "interval": 1.0,
+      "capture": {
+        "vars": ["CAP_X", "CAP_Y"],
+        "pattern": "SNAP\\|city\\|id=\\d+\\|pop=\\d+\\|at=(\\d+),(\\d+)"
+      },
+      "expect": {
+        "SNAP|city_count": "1"
+      }
+    },
+    {
+      "id": "research-pottery",
+      "action": "research-set",
+      "args": {"TECH": "TECH_POTTERY"},
+      "retries": 5,
+      "interval": 1.0,
+      "expect": {"VERIFY_RESEARCHING": "TECH_POTTERY"}
+    },
+    {
+      "id": "civic-code-of-laws",
+      "action": "civic-set",
+      "args": {"CIVIC": "CIVIC_CODE_OF_LAWS"},
+      "retries": 5,
+      "interval": 1.0,
+      "expect": {"VERIFY_CIVIC": "CIVIC_CODE_OF_LAWS"}
+    },
+    {
+      "id": "build-monument",
+      "action": "build",
+      "args": {"BUILDING": "BUILDING_MONUMENT"},
+      "retries": 3,
+      "interval": 1.0,
+      "expect": {"VERIFY_BUILDING": "true"}
+    },
+    {
+      "id": "spawn-builders",
+      "action": "unit-spawn",
+      "note": "实战中建造者操作占比最高（183 次改良），先补 2 个",
+      "args": {"TYPE": "UNIT_BUILDER", "X": "${CAP_X}", "Y": "${CAP_Y}", "COUNT": 2},
+      "expect": {"VERIFY_SPAWNED_COUNT": "2"}
+    },
+    {
+      "id": "spawn-settler",
+      "action": "unit-spawn",
+      "args": {"TYPE": "UNIT_SETTLER", "X": "${CAP_X}", "Y": "${CAP_Y}", "COUNT": 1},
+      "expect": {"VERIFY_SPAWNED_COUNT": "1"}
+    },
+    {
+      "id": "spawn-trader",
+      "action": "unit-spawn",
+      "note": "实战中贸易路线 24 次，补 1 个商人",
+      "args": {"TYPE": "UNIT_TRADER", "X": "${CAP_X}", "Y": "${CAP_Y}", "COUNT": 1},
+      "expect": {"VERIFY_SPAWNED_COUNT": "1"}
+    },
+    {
+      "id": "spawn-warriors",
+      "action": "unit-spawn",
+      "args": {"TYPE": "UNIT_WARRIOR", "X": "${CAP_X}", "Y": "${CAP_Y}", "COUNT": 2},
+      "expect": {"VERIFY_SPAWNED_COUNT": "2"}
+    },
+    {
+      "id": "select-builder",
+      "action": "select-unit",
+      "args": {"TYPE": "UNIT_BUILDER"},
+      "expect": {"SELECTED_TYPE": "UNIT_BUILDER"}
+    },
+    {
+      "id": "tech-advance",
+      "action": "tech-complete",
+      "args": {"TECH": "TECH_ANIMAL_HUSBANDRY"},
+      "expect": {"VERIFY_HAS_TECH": "true"}
+    },
+    {
+      "id": "civic-advance",
+      "action": "civic-complete",
+      "args": {"CIVIC": "CIVIC_FOREIGN_TRADE"},
+      "expect": {"VERIFY_HAS_CIVIC": "true"}
+    },
+    {
+      "id": "turn-01",
+      "action": "end-turn",
+      "args": {"FORCE": true, "TIMEOUT": 180},
+      "timeout": 30
+    },
+    {
+      "id": "turn-02",
+      "action": "end-turn",
+      "args": {"FORCE": true, "TIMEOUT": 180},
+      "timeout": 30
+    },
+    {
+      "id": "tech-post-turn",
+      "action": "tech-complete",
+      "note": "过回合后首个 GP 写入动作：验证回合切换后的动作通道",
+      "args": {"TECH": "TECH_BRONZE_WORKING"},
+      "retries": 5,
+      "interval": 1.0,
+      "expect": {"VERIFY_HAS_TECH": "true"}
+    },
+    {
+      "id": "gold-plus-500",
+      "action": "gold-inject",
+      "args": {"AMOUNT": 500, "DELTA": true},
+      "expect": {"FINAL": "OK"}
+    },
+    {
+      "id": "faith-plus-200",
+      "action": "faith-inject",
+      "args": {"AMOUNT": 200, "DELTA": true},
+      "expect": {"FINAL": "OK"}
+    },
+    {
+      "id": "turn-03",
+      "action": "end-turn",
+      "args": {"FORCE": true, "TIMEOUT": 180},
+      "timeout": 30
+    },
+    {
+      "id": "final-snapshot",
+      "action": "snapshot",
+      "expect": {
+        "SNAP|turn": "*",
+        "SNAP|city_count": "1",
+        "SNAP|unit_count": "*"
+      }
+    }
+  ]
+}

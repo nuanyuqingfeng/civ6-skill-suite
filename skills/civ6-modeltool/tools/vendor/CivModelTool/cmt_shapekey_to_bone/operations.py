@@ -1,0 +1,508 @@
+import bpy
+
+from collections import defaultdict
+import time
+import bmesh
+from mathutils import Vector
+
+from .partition import plan_parts, prune_vertex_groups
+from .utils import (
+    clamp_dot_product,
+    create_bone_for_vertex,
+    get_or_create_fcurve,
+    normalize,
+    separateSelectedPart,
+)
+
+class CMT_S2B_OT_Convert(bpy.types.Operator):
+    
+    bl_idname = "cmt.s2b_ot_convert"
+    bl_description ="将形态键动画转换为骨骼动画"
+    bl_label = "Shape Key to Bone"
+    bl_options = {"REGISTER", "UNDO"}
+    name = "转换动画"
+
+    def execute(self, context):
+        settings = context.scene.CMT.S2BSettings
+        obj = settings.TargetMesh
+        currentArmature = settings.CurrentArmature
+        abandonmentRate = settings.AbandonmentRate
+        weightSharing = settings.WeightSharing
+        directionTolerance = settings.DirectionTolerance
+
+        startTime = time.time()
+        startTime1 = startTime
+        self.report({'INFO'}, "开始获取顶点数据")
+        if not obj or not obj.data.shape_keys:
+            self.report({'WARNING'}, "请选中一个包含形态键的对象")
+        else:
+            shape_keys = obj.data.shape_keys
+            shapekeyaction = (
+                shape_keys.animation_data.action if shape_keys.animation_data else None
+            )
+            if not shapekeyaction:
+                self.report({'WARNING'}, "该对象的形态键没有动画数据！")
+            else:
+                self.report({'INFO'}, f"找到动画: {shapekeyaction.name}")
+                obj.hide_set(False)
+
+                actions_to_process = []
+                for item in settings.ShapeKeyAnimList:
+                    if item.action:
+                        actions_to_process.append(item.action)
+                if not actions_to_process:
+                    actions_to_process.append(shapekeyaction)
+
+                animated_shape_keys = set()
+                for action in actions_to_process:
+                    for fcu in action.fcurves:
+                        if "key_blocks" in fcu.data_path:
+                            sk_name = fcu.data_path.split('"')[1]
+                            animated_shape_keys.add(sk_name)
+                bpy.context.view_layer.objects.active = obj
+                # 切换到对象模式
+                bpy.ops.object.mode_set(mode="OBJECT")
+
+                # 创建新的骨架
+                if currentArmature == None:
+                    bpy.ops.object.armature_add(enter_editmode=True)
+                    armature = bpy.context.object
+                    armature.name = "ShapeKey_Armature"
+                else:
+                    armature = currentArmature
+
+                basis_key = shape_keys.key_blocks[0]
+
+                influence_vertices = defaultdict(int)
+
+                # Phase 1: 收集所有受影响顶点的形态键偏移数据
+                for shape_key_name in animated_shape_keys:
+                    shape_key = shape_keys.key_blocks.get(shape_key_name)
+
+                    if not shape_key:
+                        continue
+
+                    self.report({'INFO'}, f"形态键: {shape_key_name}")
+
+                    for index, vert in enumerate(shape_key.data):
+                        shape_offset = vert.co - basis_key.data[index].co
+                        if shape_offset.length > 1e-4:
+                            if index not in influence_vertices:
+                                influence_vertices[index] = {
+                                    "RelatedShapeKeyCount": 0,
+                                    "RelatedShapeKeyInfo": {},
+                                    "BoneName": "",
+                                }
+
+                            bone_name = f"SKB_{round(vert.co.x,4)}{round(vert.co.y,4)}{round(vert.co.z,4)}"
+                            direction = shape_offset.normalized()
+                            influence_vertices[index]["RelatedShapeKeyInfo"][
+                                shape_key_name
+                            ] = {"offset": shape_offset, "direction": direction}
+                            influence_vertices[index]["BoneName"] = bone_name
+                            influence_vertices[index]["RelatedShapeKeyCount"] += 1
+                            influence_vertices[index]["Dispose"] = False
+                            influence_vertices[index]["MaxOffsetLength"] = shape_offset.length
+                armature.hide_set(False)
+                bpy.context.view_layer.objects.active = armature
+                bpy.ops.object.mode_set(mode="EDIT")
+                parentBone = None
+                if "SKB_Root" not in armature.data.edit_bones:
+                    parentBone = armature.data.edit_bones.new("SKB_Root")
+                    parentBone.head = (0, 0, 0)  # 骨骼的起点
+                    parentBone.tail = (0, 0, 1)  # 骨骼的终点
+                else:
+                    parentBone = armature.data.edit_bones["SKB_Root"]
+                parentBone1 = None
+                if settings.ParentBone == "None":
+                    parentBone1 = None
+                else:
+                    parentBone1 = currentArmature.data.edit_bones[
+                        settings.ParentBone
+                    ]
+                if parentBone1:
+                    parentBone.parent = parentBone1
+
+                if weightSharing:
+                    # 第一步：按形态键签名分组（哪些形态键影响这个顶点）
+                    signature_groups = defaultdict(list)
+                    for index, vinfo in influence_vertices.items():
+                        sk_names = tuple(sorted(vinfo["RelatedShapeKeyInfo"].keys()))
+                        signature_groups[sk_names].append(index)
+
+                    for sk_names, vertex_indices in signature_groups.items():
+                        # 同签名只有一个顶点，无法合并
+                        if len(vertex_indices) <= 1:
+                            continue
+
+                        # 第二步：同签名内按方向相似性再分组
+                        direction_groups = []
+                        for idx in vertex_indices:
+                            # 取该顶点在每个形态键下的归一化方向，组成方向元组
+                            dir_tuple = tuple(
+                                influence_vertices[idx]["RelatedShapeKeyInfo"][sk]["direction"]
+                                for sk in sk_names
+                            )
+                            # 检查是否与已有方向组匹配（所有形态键方向都需在容差内）
+                            matched = False
+                            for group in direction_groups:
+                                representative_dir = group["representative_dir"]
+                                all_match = True
+                                for d1, d2 in zip(dir_tuple, representative_dir):
+                                    if clamp_dot_product(d1.dot(d2)) < (1.0 - directionTolerance):
+                                        all_match = False
+                                        break
+                                if all_match:
+                                    group["vertices"].append(idx)
+                                    matched = True
+                                    break
+                            if not matched:
+                                direction_groups.append({
+                                    "representative_dir": dir_tuple,
+                                    "vertices": [idx]
+                                })
+
+                        for dir_group in direction_groups:
+                            group_verts = dir_group["vertices"]
+                            # 同方向组只有一个顶点，无需合并
+                            if len(group_verts) <= 1:
+                                continue
+
+                            # 第三步：找组内总偏移最大的顶点作为代表骨骼
+                            max_vertex_index = -1
+                            max_offset_total = 0
+                            for idx in group_verts:
+                                total = sum(
+                                    influence_vertices[idx]["RelatedShapeKeyInfo"][sk]["offset"].length
+                                    for sk in sk_names
+                                )
+                                if total > max_offset_total:
+                                    max_offset_total = total
+                                    max_vertex_index = idx
+
+                            if max_vertex_index == -1 or max_offset_total == 0:
+                                continue
+
+                            combineName = influence_vertices[max_vertex_index]["BoneName"]
+
+                            # 第四步：组内所有顶点合并到代表骨骼，按偏移比例分配权重
+                            for idx in group_verts:
+                                total = sum(
+                                    influence_vertices[idx]["RelatedShapeKeyInfo"][sk]["offset"].length
+                                    for sk in sk_names
+                                )
+                                influence_vertices[idx]["Dispose"] = True
+                                if idx == max_vertex_index:
+                                    influence_vertices[idx]["Dispose"] = False
+                                influence_vertices[idx]["BoneName"] = combineName
+                                influence_vertices[idx]["WeightRatio"] = total / max_offset_total
+
+                self.report(
+                    {'INFO'},
+                    f"获取顶点数据完成，共{len(influence_vertices)}个受影响顶点，耗时：{time.time() - startTime1:.4f}",
+                )
+
+                self.report({'INFO'}, "开始绑定骨骼")
+                boneCount = 0
+                startTime1 = time.time()
+                for index, vertexInfo in influence_vertices.items():
+                    if not vertexInfo["Dispose"] and vertexInfo["BoneName"] not in armature.data.edit_bones:
+                        create_bone_for_vertex(
+                            armature,
+                            vertexInfo["BoneName"],
+                            basis_key.data[index].co,
+                            parentBone,
+                        )
+                        boneCount += 1
+
+                    vg = obj.vertex_groups.get(vertexInfo["BoneName"])
+                    if vg is None:
+                        vg = obj.vertex_groups.new(name=vertexInfo["BoneName"])
+
+                    weight = vertexInfo.get("WeightRatio", 1.0)
+                    vg.add([index], weight, "REPLACE")
+                    normalize(obj, index, armature, set(influence_vertices.keys()))
+                    if weight < 1.0 and parentBone:
+                        parent_vg = obj.vertex_groups.get(parentBone.name)
+                        if parent_vg is None:
+                            parent_vg = obj.vertex_groups.new(name=parentBone.name)
+                        parent_vg.add([index], 1.0 - weight, "REPLACE")
+
+                bpy.ops.object.mode_set(mode="POSE")
+                self.report(
+                    {'INFO'},
+                    f"绑定骨骼完成，共新增{boneCount}根骨骼，耗时：{time.time() - startTime1:.4f}",
+                )
+
+                bone_dependents = {}
+                for index, vertexInfo in influence_vertices.items():
+                    bn = vertexInfo["BoneName"]
+                    if vertexInfo.get("Dispose", False):
+                        bone_dependents.setdefault(bn, True)
+                    elif bn not in bone_dependents:
+                        bone_dependents[bn] = False
+
+                last_action = None
+                for action in actions_to_process:
+                    action_fcurves = {}
+                    action_frame_start = float('inf')
+                    action_frame_end = float('-inf')
+                    for fcu in action.fcurves:
+                        if "key_blocks" in fcu.data_path:
+                            sk_name = fcu.data_path.split('"')[1]
+                            action_fcurves[sk_name] = fcu
+                    for sk_name, fcu in action_fcurves.items():
+                        for kp in fcu.keyframe_points:
+                            if kp.co[0] < action_frame_start:
+                                action_frame_start = kp.co[0]
+                            if kp.co[0] > action_frame_end:
+                                action_frame_end = kp.co[0]
+
+                    if not action_fcurves:
+                        continue
+
+                    action_frame_start = int(action_frame_start)
+                    action_frame_end = int(action_frame_end)
+                    self.report(
+                        {'INFO'},
+                        f"处理动画: {action.name} (帧 {action_frame_start}-{action_frame_end})",
+                    )
+
+                    startTime1 = time.time()
+                    transformations = {}
+                    abandonList = {}
+                    maxOffset = 0
+                    frameCount = 0
+                    frame = action_frame_start
+
+                    # Phase 3: 逐帧计算骨骼动画（直接从fcurve值×偏移量，无需depsgraph评估）
+                    while frame <= action_frame_end:
+                        for idx, vinfo in influence_vertices.items():
+                            bone_name = vinfo["BoneName"]
+                            if not vinfo["Dispose"]:
+                                # 累加该顶点在所有当前动作形态键下的位移
+                                displacement = Vector((0, 0, 0))
+                                for sk_name, fcu in action_fcurves.items():
+                                    if sk_name in vinfo["RelatedShapeKeyInfo"]:
+                                        offset = vinfo["RelatedShapeKeyInfo"][sk_name]["offset"]
+                                        displacement += fcu.evaluate(frame) * offset
+
+                                transformations.setdefault(bone_name, [])
+                                if bone_name not in abandonList:
+                                    abandonList[bone_name] = 0
+                                abandonList[bone_name] += displacement.length
+                                if frame == action_frame_end and abandonList[bone_name] > maxOffset:
+                                    maxOffset = abandonList[bone_name]
+                                transformations[bone_name].append({"Frame": frame, "Co": displacement})
+                                frameCount += 1
+
+                        frame += 1
+
+                    self.report(
+                        {"INFO"},
+                        f"计算动画数据完成，骨骼数={len(transformations)}，耗时：{time.time() - startTime1:.4f}",
+                    )
+
+                    if abandonmentRate > 0:
+                        delCount = 0
+                        for i, v in abandonList.items():
+                            if v <= maxOffset * abandonmentRate / 100:
+                                if not bone_dependents.get(i, False):
+                                    del transformations[i]
+                                    delCount += 1
+                        self.report({'INFO'}, f"舍弃数据完成,共删除{delCount}根骨骼的数据")
+
+
+                    output_action_name = f"SKB_{action.name}"
+                    if output_action_name in bpy.data.actions:
+                        action_out = bpy.data.actions[output_action_name]
+                        for fc in action_out.fcurves:
+                            fc.keyframe_points.clear()
+                    else:
+                        action_out = bpy.data.actions.new(name=output_action_name)
+                        action_out.name = output_action_name
+
+                    for bone_name, value in transformations.items():
+                        fcurves = [None] * 3
+                        data_path = f'pose.bones["{bone_name}"].location'
+                        for axis_i in range(3):
+                            fcurves[axis_i] = get_or_create_fcurve(
+                                action_out, bone_name, axis_i, axis_i, data_path=data_path
+                            )
+                        for fc_i, fc in enumerate(fcurves):
+                            start_kps = len(fc.keyframe_points)
+                            fc.keyframe_points.add(len(value))
+                            
+                            for frameInfo, kp2 in zip(
+                                value, fc.keyframe_points[start_kps:]
+                            ):
+                                kp2.co = (frameInfo["Frame"], frameInfo["Co"][fc_i])
+                                kp2.interpolation = "LINEAR"
+                            fc.update()
+
+                    last_action = action_out
+                    self.report({'INFO'}, f"动画 {action.name} 处理完成，共插入{frameCount}个关键帧")
+
+                if last_action:
+                    try:
+                        armature.animation_data.action = last_action
+                    except AttributeError:
+                        armature.animation_data_clear()
+                        armature.animation_data_create()
+                        armature.animation_data.action = last_action
+
+                shape_keys = obj.data.shape_keys
+                if shape_keys:
+                    if shape_keys.animation_data and shape_keys.animation_data.action:
+                        shape_keys.animation_data.action = None
+                    # 索引 0 是 Basis（基型），不需要归零
+                    for key_block in shape_keys.key_blocks[1:]:
+                        key_block.value = 0.0
+
+                self.report({'INFO'}, f"形态键动画已转换为骨骼动画，总耗时:{time.time() - startTime:.4f}")
+
+        return {"FINISHED"}
+
+class CMT_S2B_OT_ClearShapeKey(bpy.types.Operator):
+
+    bl_idname = "cmt.s2b_ot_clearshapekey"
+    bl_description ="卸载形态键动画并恢复基型"
+    bl_label = "Shape Key to Bone"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.CMT.S2BSettings
+        obj = settings.TargetMesh
+        shape_keys = obj.data.shape_keys
+        if shape_keys:
+            if shape_keys.animation_data and shape_keys.animation_data.action:
+                shape_keys.animation_data.action = None
+            # 索引 0 是 Basis（基型），不需要归零
+            for key_block in shape_keys.key_blocks[1:]:
+                key_block.value = 0.0
+        return {"FINISHED"}
+
+class CMT_S2B_OT_EditSeparateMesh(bpy.types.Operator):
+    bl_idname = "cmt.s2b_ot_editseparatemesh"
+    bl_label = "Separate Mesh"
+    bl_description ="分离选中的顶点"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+
+
+        obj = bpy.context.active_object
+
+        if obj is None:
+            self.report({"ERROR"}, "请选择一个网格")
+            return {"CANCELLED"}
+
+        normals = {}
+        bpy.ops.object.mode_set(mode="OBJECT")  # 确保在对象模式
+
+
+        for polyIndex, poly in enumerate(obj.data.polygons):
+            center = tuple(round(c, 6) for c in poly.center)
+            area = round(poly.area, 6)
+            normal = tuple(round(n, 6) for n in poly.normal)
+            start = poly.loop_start
+            total = poly.loop_total
+            key = (total, center, area, normal)
+            normals.setdefault(key, [])
+            for li in range(start, start + total):
+                loop = obj.data.loops[li]
+                normals[key].append(loop.normal.copy())
+
+        separateSelectedPart(normals)
+
+        return {"FINISHED"}
+
+class CMT_S2B_OT_AutoSeparateMesh(bpy.types.Operator):
+    bl_idname = "cmt.s2b_ot_autoseparatemesh"
+    bl_label = "Separate Mesh"
+    bl_description ="按照设置的每个网格骨骼上限自动分离模型"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        bpy.ops.object.mode_set(mode="OBJECT")
+        settings = context.scene.CMT.S2BSettings
+        obj = settings.TargetMesh
+        max_bones = settings.MaxBones
+
+        if obj is None or obj.type != "MESH":
+            self.report({"ERROR"}, "请选择目标网格")
+            return {"CANCELLED"}
+
+        parts = plan_parts(obj, max_bones)
+        if len(parts) < 2:
+            self.report({"INFO"}, "骨骼数量未超过上限，无需分割")
+            return {"CANCELLED"}
+
+        # 先把上一次分离留下的同名临时组清掉。模型上如果还留着旧的
+        # AutoSeparatePartN（分离出来的碎片通常会带着一份），下面 get() 会
+        # 直接命中旧组，新旧顶点就混在同一组里，选择结果完全错乱。
+        for stale in [g for g in obj.vertex_groups
+                      if g.name.startswith("AutoSeparatePart")]:
+            obj.vertex_groups.remove(stale)
+
+        # 分离会打乱面索引，所以先把划分结果落到顶点组，之后靠顶点组选中
+        for index, (faces, _) in enumerate(parts):
+            group_name = "AutoSeparatePart" + str(index)
+            vg = obj.vertex_groups.new(name=group_name)
+
+            vertList = []
+            for pId in faces:
+                for v1 in obj.data.polygons[pId].vertices:
+                    vertList.append(v1)
+            vg.add(vertList, 1.0, "REPLACE")
+
+        normals = {}
+        bpy.ops.object.select_all(action="DESELECT")
+
+        for polyIndex, poly in enumerate(obj.data.polygons):
+            center = tuple(round(c, 6) for c in poly.center)
+            area = round(poly.area, 6)
+            normal = tuple(round(n, 6) for n in poly.normal)
+            start = poly.loop_start
+            total = poly.loop_total
+            key = (total, center, area, normal)
+            normals.setdefault(key, [])
+            for li in range(start, start + total):
+                loop = obj.data.loops[li]
+                normals[key].append(loop.normal.copy())
+
+        # 最后一块留在原对象上，免得分离出一个没有面的空物体
+        for index1 in range(len(parts) - 1):
+            bpy.context.view_layer.objects.active = obj
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="DESELECT")
+
+            group_name = "AutoSeparatePart" + str(index1)
+            vg = obj.vertex_groups.get(group_name)
+            if vg is None:
+                continue
+            obj.vertex_groups.active_index = vg.index
+            bpy.ops.object.vertex_group_select()
+
+            bm = bmesh.from_edit_mesh(obj.data)
+            bm.faces.ensure_lookup_table()
+            for face in bm.faces:
+                if face.select and not all(v.select for v in face.verts):
+                    face.select = False
+            bmesh.update_edit_mesh(obj.data)
+
+            obj.vertex_groups.remove(vg)
+
+            if any(f.select for f in bm.faces):
+                before = set(bpy.context.scene.objects)
+                separateSelectedPart(normals)
+                for new_obj in [
+                    o for o in bpy.context.scene.objects if o not in before
+                ]:
+                    prune_vertex_groups(new_obj, parts[index1][1])
+
+        prune_vertex_groups(obj, parts[len(parts) - 1][1])
+
+        bpy.context.view_layer.objects.active = obj
+        return {"FINISHED"}
+

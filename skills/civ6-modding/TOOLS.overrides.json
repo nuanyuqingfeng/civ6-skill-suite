@@ -1,0 +1,53 @@
+{
+  "tools/_paths.py": {
+    "usage": "python _paths.py                          # 自检：打印 P1-P6 关键路径 + 外部工具的实际解析结果（缺失项标 [缺失]）\npython _paths.py --tool uploader            # 只打印某个外部工具的解析路径（供 shell 包装脚本调用）\npython _paths.py --path mods                # 同上，取 P1-P6 路径键；未找到 exit 1、键名非法 exit 2"
+  },
+  "tools/verify_mod_package.py": {
+    "purpose": "交付包体检：源工程 ↔ Mods 副本 ↔ 上传工作区 三处一致性 + .modinfo 结构与引用闭合。两类预期差异自动放行：cook 产物（BLPs 与 .dep 源工程本就没有）、美术引用管线文件（见 ART_PIPELINE_EXTS，按规范不进 Content 与 Files）。ImportFiles/ 之下不豁免，须三处齐全。UpdateArt 与 .dep 另做独立硬检查，不参与软放行",
+    "usage": "python verify_mod_package.py --src <源工程目录> --mods <Mods/<ModName>> [--ws <上传工作区 content>] [--files a/b.lua,c.lua] [--strict]\n--strict = 关掉全部放行，逐字节 + 零未登记（默认关闭）"
+  },
+  "scripts/check_pantry.py": {
+    "usage": "python check_pantry.py --root <工程根> [--quiet]        # 注意：根目录只走 --root（不是位置参数），也没有贴图目录过滤选项",
+    "purpose": "pantry 体检：`.tex` 位置 / 重名 / depot 库路径 / 非 ASCII / `.tex`↔`.dds` 配对 —— 开 AssetEditor / cook 前必跑。（注：其中 `m_SourceFilePath` 期望 `D:\\desktop\\<stem>.png` 这一条是**示例工程（作者 mod 工程）的约定**，不是 Civ6 通用规则；别的工程会命中 `[src-convention]` 告警，按你自己工程的约定判断即可。）"
+  },
+  "scripts/clear_ae_cache.py": {
+    "usage": "python clear_ae_cache.py [--mod <ModName>] [--dry-run]        # 动过贴图后必跑，否则 AssetEditor 结论是缓存假象"
+  },
+  "_comment": "docstring/argparse 抽不出人话的少数脚本在这里覆盖；覆盖值参与生成，重跑不会丢。键 = 相对 skill 根的路径。",
+  "release/scripts/clash_proxy.py": {
+    "purpose": "Clash Verge 代理节点测速与自动选优（上传工坊网络差时用）",
+    "usage": "python clash_proxy.py [--url <工坊链接>] [--timeout 3000] [--max-workers 8]（测完自动选最优节点为 GLOBAL，无关闭开关）"
+  },
+  "release/scripts/make_workspace.ps1": {
+    "purpose": "建工坊上传工作区（首选入口）：content 用 junction 指向 Mods 副本（不物理复制 751 MB）→ workshop.json → mod_id.txt → validate，幂等可重跑",
+    "usage": "powershell -File make_workspace.ps1 -ModDir <Mods/<ModName>> [-ItemId <工坊ID>] [-WsRoot <根>] [-Force] [-SkipValidate]"
+  },
+  "release/scripts/cleanup.ps1": {
+    "purpose": "删除临时上传工作区（真上传成功并验证后才跑）。三重守卫：仅在工作区根之下（`ws_root`，与 make_workspace.ps1 同源解析；短/长名两种写法均已归一） / 工作区自身非 reparse point / 先摘内部链接再递归删——摘链用 `Directory.Delete`，不用 Remove-Item（PS 5.1 对跨卷 junction 会抛 NullReferenceException）；content 是 junction 时 Mods 副本不受影响",
+    "usage": "powershell -File cleanup.ps1 -Workspace <工作区路径>（长名或 8.3 短名均可）"
+  },
+  "release/scripts/build.ps1": {
+    "purpose": "构建非 Trimmed 版 Civ6WorkshopUploader（勿用 PublishTrimmed，会卡 PreparingContent）",
+    "usage": "powershell -File build.ps1（内部 dotnet publish -c Release -r win-x64）"
+  },
+  "release/scripts/validate.ps1": {
+    "purpose": "上传前 validate 工作区（exit 0 才允许 upload）",
+    "usage": "powershell -File validate.ps1 -Workspace <工作区>"
+  },
+  "release/scripts/upload.ps1": {
+    "purpose": "上传 / 更新工坊条目（日志默认写 <tool目录>\\logs）",
+    "usage": "powershell -File upload.ps1 -Workspace <工作区> [-TimeoutSeconds 1800]"
+  },
+  "release/scripts/verify.ps1": {
+    "purpose": "上传后经 Steam API 验证（比对 time_updated / hcontent_file，识别假成功）",
+    "usage": "powershell -File verify.ps1 -ItemId <工坊条目ID>"
+  },
+  "release/scripts/find_item_id.ps1": {
+    "purpose": "从本机 Steam 日志反查工坊条目 ID",
+    "usage": "powershell -File find_item_id.ps1 -ModName <ModName>"
+  },
+  "release/scripts/clash_api.ps1": {
+    "purpose": "Clash Verge 命名管道 API 调用壳（返回原始 HTTP 响应）",
+    "usage": "powershell -File clash_api.ps1 -Method GET -Path \"/proxies\" -OutFile resp.txt"
+  }
+}
